@@ -12,34 +12,25 @@ import static cs576.VideoEncoder.MACROBLOCK_LENGTH;
  */
 public class Macroblock {
 
-    private byte layer;
+    private int layer;
     private int x;
     private int y;
     private int index;
-    private Interframe frame;
+    private Frame frame;
 
-    public Macroblock(Interframe frame, int x, int y, int blockIndex) {
+    public Macroblock(Frame frame, int x, int y, int blockIndex) {
         this.frame = frame;
         this.x = x;
         this.y = y;
         this.index = blockIndex;
     }
 
-    public Macroblock(Interframe frame, int x, int y, int index, byte layer) {
-        this.frame = frame;
-        this.x = x;
-        this.y = y;
-        this.index = index;
-
-        this.layer = layer;
-    }
-
     public int getLayer() {
-        return layer & 0xFF;
+        return layer;
     }
 
     public void setLayer(int layer) {
-        this.layer = (byte) layer;
+        this.layer = layer;
     }
 
     public int getX() {

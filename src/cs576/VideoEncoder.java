@@ -133,52 +133,8 @@ public class VideoEncoder {
 
         System.out.println("\rFIRST STAGE DONE");
 
-        // Organize into background and foregrounds
-        groupRegions();
-
     }
 
-    /**
-     * Assign all macroblocks a layer index
-     */
-    private void groupRegions() {
-        /**
-         * •Contiguous or adjacent
-         •The motion vectors are all consistent – important!
-         The consistency of the motion vector direction gives you an indication
-         that all the macroblocks probably belong to the same object and are moving in a certain direction
-         */
-//
-//        for (Frame f : frames.values()) {
-//            if (f.getFrameType() != Frame.PREDICTIVEFRAME)
-//                continue;
-//            PredictiveFrame frame = (PredictiveFrame) f;
-//            HashMap<Integer,MotionVector> layers = new HashMap<>();
-//            layers.put(0,new MotionVector(0,0)); // background
-//
-//            for (Map.Entry<Macroblock, MotionVector> entry : frame.motionVectors.entrySet()) {
-//
-//                double angle = entry.getValue().toAngle();
-//                boolean found = false;
-//
-//                // Find a layer with similar motion vector
-//                for (Map.Entry<Integer, MotionVector> layer_direction : layers.entrySet()){
-//                    if (layer_direction.getValue().toAngle() - angle <= 10){
-//
-//                        entry.getKey().setLayer(layer_direction.getKey());
-//                        found = true;
-//                        break;
-//                    }
-//
-//                }
-//
-//                // Create a new layer
-//                if (!found){
-//                    layers.put(layers.size(), entry.getValue());
-//                }
-//            }
-//        }
-    }
 
     public static void main(String[] argv) {
         if (argv.length == 1 && argv[0].endsWith(".rgb")) {

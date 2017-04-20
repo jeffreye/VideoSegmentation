@@ -56,7 +56,7 @@ public class Utils {
 
     };
 
-    public static byte[] convertToRawImage(float[][] imageY, float[][] imageU, float[][] imageV) {
+    public static byte[] convertToRGB(float[][] imageY, float[][] imageU, float[][] imageV) {
         int height = imageY.length;
         int width = imageY[0].length;
 
@@ -76,6 +76,22 @@ public class Utils {
             }
         }
         return rawImage;
+    }
+
+
+    public static void convertToYUV(byte[] imageBuffer, int height, int width, float[][] imageY, float[][] imageU, float[][] imageV) {
+        for (int k = 0; k < height; k++) {
+            for (int l = 0; l < width; l++) {
+                int pixelIndex = (k) * width + l;
+                int r = imageBuffer[pixelIndex] & 0xFF;
+                int g = imageBuffer[pixelIndex + height * width] & 0xFF;
+                int b = imageBuffer[pixelIndex + height * width * 2] & 0xFF;
+
+                imageY[k][l] = 0.2990f * r + 0.5870f * g + 0.1140f * b;
+                imageU[k][l] = 128f - 0.1687f * r + 0.3313f * g + 0.5000f * b;
+                imageV[k][l] = 128f + 0.5000f * r + 0.418688f * g + 0.081312f * b;
+            }
+        }
     }
 
     public static void calculateDCTValues(float[][] imageY, float[][] imageU, float[][] imageV, int height, int width, byte[][] acValues, int[] dcValues) {
