@@ -17,7 +17,8 @@ public class Interframe implements Frame {
     private Macroblock[] macroblocks;
     private int macroblockWidth;
     private int macroblockHeight;
-    private byte[][] dctValues;
+    private byte[][] acValues;
+    private int[] dcValues;
 
     /***
      * Image (Y Channel)
@@ -67,11 +68,9 @@ public class Interframe implements Frame {
         }
 
 
-        this.dctValues = new byte[getDctValueSize(height, width)][];
-
-        int offset = calculateDCTValues(imageY, height, width, true, dctValues, 0);
-        offset = calculateDCTValues(imageU, height, width, false, dctValues, offset);
-        offset = calculateDCTValues(imageV, height, width, false, dctValues, offset);
+        this.acValues = new byte[getDctValueSize(height, width)][];
+        this.dcValues = new int[acValues.length];
+        calculateDCTValues(imageY, imageU, imageV, height, width, acValues, dcValues);
     }
 
 
@@ -90,9 +89,11 @@ public class Interframe implements Frame {
             }
         }
 
-        this.dctValues = new byte[getDctValueSize(height, width)][];
-        for (int i = 0; i < dctValues.length; i++) {
-            inputStream.readFully(dctValues[i] = new byte[64]);
+        this.acValues = new byte[getDctValueSize(height, width)][];
+        this.dcValues = new int[acValues.length];
+        for (int i = 0; i < acValues.length; i++) {
+            dcValues[i] = inputStream.readInt();
+            inputStream.readFully(acValues[i] = new byte[64]);
         }
 
         // Done reading
@@ -100,7 +101,7 @@ public class Interframe implements Frame {
         imageY = new float[height][width];
         imageU = new float[height][width];
         imageV = new float[height][width];
-        calculateImage(dctValues, height, width, this.imageY, this.imageU, this.imageV);
+        calculateImage(acValues, dcValues, height, width, this.imageY, this.imageU, this.imageV);
     }
 
     public Macroblock[] getBlocks() {
@@ -128,8 +129,9 @@ public class Interframe implements Frame {
         for (Macroblock mc : this.macroblocks) {
             os.writeByte(mc.getLayer());
         }
-        for (int i = 0; i < dctValues.length; i++) {
-            os.write(dctValues[i]);
+        for (int i = 0; i < acValues.length; i++) {
+            os.writeInt(dcValues[i]);
+            os.write(acValues[i]);
         }
     }
 

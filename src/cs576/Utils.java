@@ -56,7 +56,7 @@ public class Utils {
 
     };
 
-    public static byte[] convertToRawImage(float[][] imageY,float[][] imageU,float[][] imageV){
+    public static byte[] convertToRawImage(float[][] imageY, float[][] imageU, float[][] imageV) {
         int height = imageY.length;
         int width = imageY[0].length;
 
@@ -78,76 +78,47 @@ public class Utils {
         return rawImage;
     }
 
-    public static byte[][] calculateDCTValues(byte[] image, int height, int width) {
-        // Calculate DCT values
-        // compute the DCT values for each blocks
-        // NO zigzag order
-        byte[][] dctValues = new byte[getDctValueSize(height, width)][];
-        float[][] y = new float[DCT_BLOCK_LENGTH][DCT_BLOCK_LENGTH];
-        float[][] u = new float[DCT_BLOCK_LENGTH][DCT_BLOCK_LENGTH];
-        float[][] v = new float[DCT_BLOCK_LENGTH][DCT_BLOCK_LENGTH];
-
-        int ind = 0;
-        for (int i = 0; i < height; i += DCT_BLOCK_LENGTH) {
-            for (int j = 0; j < width; j += DCT_BLOCK_LENGTH) {
-
-                for (int k = 0; k < DCT_BLOCK_LENGTH; k++) {
-                    for (int l = 0; l < DCT_BLOCK_LENGTH; l++) {
-                        if (i + k >= height || j + l >= width) {
-                            y[k][l] = 0;
-                            u[k][l] = 128f;
-                            v[k][l] = 128f;
-                        } else {
-                            int pixelIndex = (i + k) * width + j + l;
-                            int r = image[pixelIndex] & 0xFF;
-                            int g = image[pixelIndex + height * width] & 0xFF;
-                            int b = image[pixelIndex + height * width * 2] & 0xFF;
-
-                            y[k][l] = 0.2990f * r + 0.5870f * g + 0.1140f * b;
-                            u[k][l] = 128f - 0.1687f * r + 0.3313f * g + 0.5000f * b;
-                            v[k][l] = 128f + 0.5000f * r + 0.418688f * g + 0.081312f * b;
-                        }
-                    }
-                }
-
-                dctValues[ind++] = calculateDCTBlock(DCT.forwardDCT(y), LuminanceTable);
-                dctValues[ind++] = calculateDCTBlock(DCT.forwardDCT(u), ChrominanceTable);
-                dctValues[ind++] = calculateDCTBlock(DCT.forwardDCT(v), ChrominanceTable);
-            }
-        }
-        return dctValues;
-    }
-
-    public static int calculateDCTValues(float[][] image, int height, int width, boolean isLuminance, byte[][] dctValues, int offset) {
+    public static void calculateDCTValues(float[][] imageY, float[][] imageU, float[][] imageV, int height, int width, byte[][] acValues, int[] dcValues) {
         // Calculate DCT values
         // compute the DCT values for each blocks
         // NO zigzag order
         float[][] temp = new float[DCT_BLOCK_LENGTH][DCT_BLOCK_LENGTH];
 
-        int ind = offset;
+        int ind = 0;
         for (int i = 0; i < height; i += DCT_BLOCK_LENGTH) {
             for (int j = 0; j < width; j += DCT_BLOCK_LENGTH) {
+                copyToTemp(height, width, true, temp, i, j, imageY);
+                dcValues[ind] = calculateDCTBlock(temp, LuminanceTable, acValues[ind] = new byte[64]);
+                ind++;
 
-                for (int k = 0; k < DCT_BLOCK_LENGTH; k++) {
-                    for (int l = 0; l < DCT_BLOCK_LENGTH; l++) {
-                        if (i + k >= height || j + l >= width)
-                            temp[k][l] = isLuminance ? 0f : 128f;
-                        else
-                            temp[k][l] = image[i + k][j + l];
-                    }
-                }
+                copyToTemp(height, width, false, temp, i, j, imageU);
+                dcValues[ind] = calculateDCTBlock(temp, ChrominanceTable, acValues[ind] = new byte[64]);
+                ind++;
 
-                dctValues[ind++] = calculateDCTBlock(DCT.forwardDCT(temp), isLuminance ? LuminanceTable : ChrominanceTable);
+                copyToTemp(height, width, false, temp, i, j, imageV);
+                dcValues[ind] = calculateDCTBlock(temp, ChrominanceTable, acValues[ind] = new byte[64]);
+                ind++;
+
             }
         }
-        return ind;
+    }
+
+    private static void copyToTemp(int height, int width, boolean isLuminance, float[][] temp, int i, int j, float[][] image) {
+        for (int k = 0; k < DCT_BLOCK_LENGTH; k++) {
+            for (int l = 0; l < DCT_BLOCK_LENGTH; l++) {
+                if (i + k >= height || j + l >= width)
+                    temp[k][l] = isLuminance ? 0f : 128f;
+                else
+                    temp[k][l] = image[i + k][j + l];
+            }
+        }
     }
 
 
-    private static byte[] calculateDCTBlock(float[][] input, int[] quantizeTable) {
-        byte[] output = new byte[64];
-
+    private static int calculateDCTBlock(float[][] input, int[] quantizeTable, byte[] output) {
         int index = 0;
+        DCT.forwardDCT(input);
+        int ac = round(input[0][0] / quantizeTable[index]);
         for (int i = 0; i < DCT_BLOCK_LENGTH; i++) {
             for (int j = 0; j < DCT_BLOCK_LENGTH; j++) {
                 output[index] = (byte) Math.round(input[i][j] / quantizeTable[index]);
@@ -155,7 +126,7 @@ public class Utils {
             }
         }
 
-        return output;
+        return ac;
     }
 
     public static int getDctValueSize(int height, int width) {
@@ -164,15 +135,15 @@ public class Utils {
         return dctHeight * dctWidth * 3;
     }
 
-    public static void calculateImage(byte[][] dctValues, int height, int width,float[][] imageY,float[][] imageU,float[][] imageV) {
+    public static void calculateImage(byte[][] acValues, int[] dcValues, int height, int width, float[][] imageY, float[][] imageU, float[][] imageV) {
         // Calculate IDCT values
         int ind = 0;
         for (int i = 0; i < height; i += DCT_BLOCK_LENGTH) {
             for (int j = 0; j < width; j += DCT_BLOCK_LENGTH) {
 
-                float[][] y = calculateImageBlock(dctValues[ind++], LuminanceTable);
-                float[][] u = calculateImageBlock(dctValues[ind++], ChrominanceTable);
-                float[][] v = calculateImageBlock(dctValues[ind++], ChrominanceTable);
+                float[][] y = calculateImageBlock(acValues[ind], LuminanceTable, dcValues[ind]);ind++;
+                float[][] u = calculateImageBlock(acValues[ind], ChrominanceTable, dcValues[ind]);ind++;
+                float[][] v = calculateImageBlock(acValues[ind], ChrominanceTable, dcValues[ind]);ind++;
 
 
                 for (int k = 0; k < DCT_BLOCK_LENGTH; k++) {
@@ -180,9 +151,9 @@ public class Utils {
                         if (i + k >= height || j + l >= width)
                             continue;
 
-                        imageY[i+k][j+l] = y[k][l];
-                        imageU[i+k][j+l] = u[k][l];
-                        imageV[i+k][j+l] = v[k][l];
+                        imageY[i + k][j + l] = y[k][l];
+                        imageU[i + k][j + l] = u[k][l];
+                        imageV[i + k][j + l] = v[k][l];
                     }
                 }
 
@@ -190,47 +161,16 @@ public class Utils {
         }
     }
 
-    public static byte[] calculateImage(byte[][] dctValues, int height, int width) {
-        // Calculate IDCT values
-        byte[] image = new byte[height * width * 3];
-        int ind = 0;
-        for (int i = 0; i < height; i += DCT_BLOCK_LENGTH) {
-            for (int j = 0; j < width; j += DCT_BLOCK_LENGTH) {
-
-                float[][] y = calculateImageBlock(dctValues[ind++], LuminanceTable);
-                float[][] u = calculateImageBlock(dctValues[ind++], ChrominanceTable);
-                float[][] v = calculateImageBlock(dctValues[ind++], ChrominanceTable);
-
-
-                for (int k = 0; k < DCT_BLOCK_LENGTH; k++) {
-                    for (int l = 0; l < DCT_BLOCK_LENGTH; l++) {
-                        if (i + k >= height || j + l >= width)
-                            continue;
-
-                        float _y = y[k][l];
-                        float _u = u[k][l];
-                        float _v = v[k][l];
-
-                        int pixelIndex = (i + k) * width + j + l;
-                        image[pixelIndex] = (byte) round(_y + 1.402f * (_v - 128f));
-                        image[pixelIndex + height * width] = (byte) round(_y - 0.344136f * (_u - 128f) - 0.714136f * (_v - 128f));
-                        image[pixelIndex + height * width * 2] = (byte) round(_y - 1.772f * (_u - 128f));
-                    }
-                }
-
-            }
-        }
-        return image;
-    }
-
-    private static float[][] calculateImageBlock(byte[] dct, int[] quantizeTable) {
+    private static float[][] calculateImageBlock(byte[] dct, int[] quantizeTable, int dc) {
         float[][] input = new float[DCT_BLOCK_LENGTH][DCT_BLOCK_LENGTH];
         int index = 0;
         for (int i = 0; i < DCT_BLOCK_LENGTH; i++) {
             for (int j = 0; j < DCT_BLOCK_LENGTH; j++) {
-                input[i][j] = (dct[index] & 0xFF) * quantizeTable[index];
+                input[i][j] = ((float) dct[index]) * quantizeTable[index];
+                index++;
             }
         }
+        input[0][0] = ((float) dc) * quantizeTable[0];
         return DCT.inverseDCT(input);
     }
 }

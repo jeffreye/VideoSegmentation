@@ -14,7 +14,8 @@ import static cs576.Utils.*;
 public class PredictiveFrame implements Frame {
     private HashMap<Macroblock, MotionVector> motionVectors;
     private Interframe referenceFrame;
-    private byte[][] errorDCTValues;
+    private byte[][] errorAcValues;
+    private int[] errorDcValues;
 
     // Error frame
     /***
@@ -53,9 +54,9 @@ public class PredictiveFrame implements Frame {
         int height = referenceFrame.height;
         int width = referenceFrame.width;
 
-        float[][] imageY = new float[height][width];
-        float[][] imageU = new float[height][width];
-        float[][] imageV = new float[height][width];
+        this.imageY = new float[height][width];
+        this.imageU = new float[height][width];
+        this.imageV = new float[height][width];
         for (int k = 0; k < height; k++) {
             for (int l = 0; l < width; l++) {
                 int pixelIndex = (k) * width + l;
@@ -97,9 +98,11 @@ public class PredictiveFrame implements Frame {
             );
         }
 
-        this.errorDCTValues = new byte[getDctValueSize(referenceFrame.height, referenceFrame.width)][];
-        for (int i = 0; i < errorDCTValues.length; i++) {
-            inputStream.readFully(errorDCTValues[i] = new byte[64]);
+        this.errorAcValues = new byte[getDctValueSize(referenceFrame.height, referenceFrame.width)][];
+        this.errorDcValues = new int[errorAcValues.length];
+        for (int i = 0; i < errorAcValues.length; i++) {
+            errorDcValues[i] = inputStream.readInt();
+            inputStream.readFully(errorAcValues[i] = new byte[64]);
         }
         // Done reading
 
@@ -108,7 +111,7 @@ public class PredictiveFrame implements Frame {
         this.errorImageU = new float[height][width];
         this.errorImageV = new float[height][width];
         calculateImage(
-                this.errorDCTValues, referenceFrame.height, referenceFrame.width,
+                this.errorAcValues,this.errorDcValues, referenceFrame.height, referenceFrame.width,
                 this.errorImageY, this.errorImageU, this.errorImageV);
 
         this.imageY = new float[height][width];
@@ -137,7 +140,7 @@ public class PredictiveFrame implements Frame {
         errorImageY = null;
         errorImageU = null;
         errorImageV = null;
-        errorDCTValues = null;
+        errorAcValues = null;
     }
 
     /**
@@ -231,11 +234,10 @@ public class PredictiveFrame implements Frame {
             }
         }
 
-        this.errorDCTValues = new byte[getDctValueSize(height, width)][];
+        this.errorAcValues = new byte[getDctValueSize(height, width)][];
+        this.errorDcValues = new int[errorAcValues.length];
 
-        int offset = calculateDCTValues(errorImageY, height, width, true, errorDCTValues, 0);
-        offset = calculateDCTValues(errorImageU, height, width, false, errorDCTValues, offset);
-        offset = calculateDCTValues(errorImageV, height, width, false, errorDCTValues, offset);
+        calculateDCTValues(errorImageY, errorImageU, errorImageV, height, width, errorAcValues,errorDcValues);
     }
 
     @Override
@@ -256,8 +258,9 @@ public class PredictiveFrame implements Frame {
             os.writeInt(v.x);
             os.writeInt(v.y);
         }
-        for (int i = 0; i < errorDCTValues.length; i++) {
-            os.write(errorDCTValues[i]);
+        for (int i = 0; i < errorAcValues.length; i++) {
+            os.writeInt(errorDcValues[i]);
+            os.write(errorAcValues[i]);
         }
     }
 
