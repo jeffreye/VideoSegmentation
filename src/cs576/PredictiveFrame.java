@@ -12,7 +12,7 @@ import static cs576.Utils.*;
  * Created by Jeffreye on 4/15/2017.
  */
 public class PredictiveFrame implements Frame {
-    private HashMap<Macroblock, MotionVector> motionVectors;
+    HashMap<Macroblock, MotionVector> motionVectors;
     private Interframe referenceFrame;
     private byte[][] errorAcValues;
     private int[] errorDcValues;

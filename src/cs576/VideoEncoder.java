@@ -19,9 +19,9 @@ public class VideoEncoder {
     private static final int k = 10;
     private static final int PREDICT_FRAMES = 4;
 
-    private ConcurrentSkipListMap<Integer,Frame> frames;
+    private ConcurrentSkipListMap<Integer, Frame> frames;
 
-    public VideoEncoder(String inputFile,String outputFile,int width,int height) throws FileNotFoundException{
+    public VideoEncoder(String inputFile, String outputFile, int width, int height) throws FileNotFoundException {
         this.outputFile = outputFile;
         this.inputFile = inputFile;
         this.width = width;
@@ -41,7 +41,7 @@ public class VideoEncoder {
         return bytes;
     }
 
-    public void encode() throws  IOException {
+    public void encode() throws IOException {
         segment(PREDICT_FRAMES);
 
         DataOutputStream outputStream = new DataOutputStream(new FileOutputStream(outputFile));
@@ -50,8 +50,8 @@ public class VideoEncoder {
         outputStream.writeInt(frames.size());
 
         int frameCount = 0;
-        for (Frame f : frames.values()){
-            System.out.print("\rFrame "+ Integer.toString(++frameCount) + "/" + Integer.toString(frames.size()) + " Serialized.");
+        for (Frame f : frames.values()) {
+            System.out.print("\rFrame " + Integer.toString(++frameCount) + "/" + Integer.toString(frames.size()) + " Serialized.");
             outputStream.write(f.getFrameType());
             f.serialize(outputStream);
             outputStream.flush();
@@ -62,6 +62,7 @@ public class VideoEncoder {
 
     /**
      * Semantic Layering of Video
+     *
      * @param predictFrames the number of predict frames after an Intraframe
      */
     private void segment(int predictFrames) throws IOException {
@@ -75,20 +76,23 @@ public class VideoEncoder {
 
         AtomicInteger processedFrame = new AtomicInteger(0);
 
-        while (inputStream.available() != 0){
+        while (inputStream.available() != 0) {
 
             byte[] frameBuffer = readImage(inputStream);
             int frameIndex = frameCount++;
 
-             CompletableFuture<Interframe> interframeCompletableFuture = CompletableFuture
-                    .supplyAsync(()->{
-                        Interframe current = new Interframe(frameBuffer,height,width);
-                        frames.put(frameIndex,current);
+            CompletableFuture<Interframe> interframeCompletableFuture = CompletableFuture
+                    .supplyAsync(() -> {
+                        Interframe current = new Interframe(frameBuffer, height, width);
+                        frames.put(frameIndex, current);
                         return current;
                     });
-            interframeCompletableFuture.exceptionally(throwable -> {throwable.printStackTrace(System.err); return null;});
-            interframeCompletableFuture.thenRun(()->processedFrame.incrementAndGet());
-            futures[frameIndex]= interframeCompletableFuture;
+            interframeCompletableFuture.exceptionally(throwable -> {
+                throwable.printStackTrace(System.err);
+                return null;
+            });
+            interframeCompletableFuture.thenRun(() -> processedFrame.incrementAndGet());
+            futures[frameIndex] = interframeCompletableFuture;
 
 
             for (int i = 0; i < predictFrames && inputStream.available() != 0; i++) {
@@ -98,8 +102,11 @@ public class VideoEncoder {
                 CompletableFuture<Void> predictframeFuture = interframeCompletableFuture.thenAcceptAsync(interframe -> {
                     frames.put(predictFrameIndex, new PredictiveFrame(interframe, predictFrameBuffer, k));
                 });
-                predictframeFuture.exceptionally(throwable -> {throwable.printStackTrace(System.err); return null;});
-                predictframeFuture.thenRun(()->processedFrame.incrementAndGet());
+                predictframeFuture.exceptionally(throwable -> {
+                    throwable.printStackTrace(System.err);
+                    return null;
+                });
+                predictframeFuture.thenRun(() -> processedFrame.incrementAndGet());
                 futures[predictFrameIndex] = predictframeFuture;
             }
 
@@ -118,8 +125,11 @@ public class VideoEncoder {
             }
         }
 
-        if(allfutures.isCompletedExceptionally())
-            allfutures.exceptionally(throwable -> {throwable.printStackTrace(System.err); return null;});
+        if (allfutures.isCompletedExceptionally())
+            allfutures.exceptionally(throwable -> {
+                throwable.printStackTrace(System.err);
+                return null;
+            });
 
         System.out.println("\rFIRST STAGE DONE");
 
@@ -134,26 +144,54 @@ public class VideoEncoder {
     private void groupRegions() {
         /**
          * •Contiguous or adjacent
-           •The motion vectors are all consistent – important!
-            The consistency of the motion vector direction gives you an indication
-            that all the macroblocks probably belong to the same object and are moving in a certain direction
+         •The motion vectors are all consistent – important!
+         The consistency of the motion vector direction gives you an indication
+         that all the macroblocks probably belong to the same object and are moving in a certain direction
          */
+//
+//        for (Frame f : frames.values()) {
+//            if (f.getFrameType() != Frame.PREDICTIVEFRAME)
+//                continue;
+//            PredictiveFrame frame = (PredictiveFrame) f;
+//            HashMap<Integer,MotionVector> layers = new HashMap<>();
+//            layers.put(0,new MotionVector(0,0)); // background
+//
+//            for (Map.Entry<Macroblock, MotionVector> entry : frame.motionVectors.entrySet()) {
+//
+//                double angle = entry.getValue().toAngle();
+//                boolean found = false;
+//
+//                // Find a layer with similar motion vector
+//                for (Map.Entry<Integer, MotionVector> layer_direction : layers.entrySet()){
+//                    if (layer_direction.getValue().toAngle() - angle <= 10){
+//
+//                        entry.getKey().setLayer(layer_direction.getKey());
+//                        found = true;
+//                        break;
+//                    }
+//
+//                }
+//
+//                // Create a new layer
+//                if (!found){
+//                    layers.put(layers.size(), entry.getValue());
+//                }
+//            }
+//        }
     }
 
-    public static void main(String[] argv){
-        if (argv.length == 1 && argv[0].endsWith(".rgb")){
-            try{
+    public static void main(String[] argv) {
+        if (argv.length == 1 && argv[0].endsWith(".rgb")) {
+            try {
                 String input = argv[0];
-                String output = input.substring(0,input.length() - 4).concat(".cmp");
-                VideoEncoder encoder = new VideoEncoder(input,output,960,540);
+                String output = input.substring(0, input.length() - 4).concat(".cmp");
+                VideoEncoder encoder = new VideoEncoder(input, output, 960, 540);
                 encoder.encode();
-            }
-            catch (Exception e){
+            } catch (Exception e) {
                 e.printStackTrace(System.err);
             }
 
-        }
-        else{
+        } else {
             System.err.println("Invalid arguments");
             System.err.println("Only accepts file name as argument");
         }

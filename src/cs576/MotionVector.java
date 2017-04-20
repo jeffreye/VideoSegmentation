@@ -10,4 +10,12 @@ public class MotionVector {
         this.x = x;
         this.y = y;
     }
+
+    public double magnitude(){
+        return Math.sqrt(x*x+y*y);
+    }
+
+    public double toAngle(){
+        return Math.atan2(x, y);
+    }
 }
