@@ -1,44 +1,38 @@
 package cs576;
 
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.util.ArrayList;
+import java.io.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Created by Jeffreye on 4/1/2017.
  */
 public class VideoEncoder {
 
-    static final int blocksize = 16;
+    static final int MACROBLOCK_LENGTH = 16;
 
+    private String inputFile;
+    private String outputFile;
+    private int width;
+    private int height;
+    private static final int k = 10;
+    private static final int PREDICT_FRAMES = 4;
 
-    FileInputStream inputStream;
-    FileOutputStream outputStream;
-    int width;
-    int height;
-    int k = 10;
-
-    byte[] bytes;
-
-    int macroblockWidth;
-    int macroblockHeight;
-
-    ArrayList<Frame> frames;
+    private ConcurrentSkipListMap<Integer,Frame> frames;
 
     public VideoEncoder(String inputFile,String outputFile,int width,int height) throws FileNotFoundException{
-        inputStream = new FileInputStream(inputFile);
-        outputStream = new FileOutputStream(outputFile);
+        this.outputFile = outputFile;
+        this.inputFile = inputFile;
         this.width = width;
         this.height = height;
-        macroblockWidth = 1 + (width - 1) / blocksize; // ceiling
-        macroblockHeight = 1 + (height - 1) / blocksize;
-        frames = new ArrayList<>();
+        frames = new ConcurrentSkipListMap<>();
     }
 
 
-    byte[] readImage() throws IOException {
+    byte[] readImage(InputStream inputStream) throws IOException {
+
+        byte[] bytes = new byte[width * height * 3];
         int offset = 0;
         int numRead = 0;
         while (offset < bytes.length && (numRead = inputStream.read(bytes, offset, bytes.length - offset)) >= 0) {
@@ -48,18 +42,22 @@ public class VideoEncoder {
     }
 
     public void encode() throws  IOException {
-        bytes = new byte[width * height * 3];
-        segment(4);
+        segment(PREDICT_FRAMES);
+
+        DataOutputStream outputStream = new DataOutputStream(new FileOutputStream(outputFile));
+        outputStream.writeInt(width);
+        outputStream.writeInt(height);
+        outputStream.writeInt(frames.size());
 
         int frameCount = 0;
-        for (Frame f : frames){
+        for (Frame f : frames.values()){
+            System.out.print("\rFrame "+ Integer.toString(++frameCount) + "/" + Integer.toString(frames.size()) + " Serialized.");
+            outputStream.write(f.getFrameType());
             f.serialize(outputStream);
-            System.out.print("Frame "+ Integer.toString(++frameCount) + "/" + Integer.toString(frames.size()) + " Serialized.\r");
+            outputStream.flush();
         }
 
-        inputStream.close();
         outputStream.close();
-        bytes = null;
     }
 
     /**
@@ -68,34 +66,66 @@ public class VideoEncoder {
      */
     private void segment(int predictFrames) throws IOException {
 
+        InputStream inputStream = new FileInputStream(inputFile);
         // Mark first frame as an I frame
-        int count = 1;
-        Interframe previous = null;
         int frameCount = 0;
         int frameNumbers = inputStream.available() / (3 * height * width);
+
+        CompletableFuture[] futures = new CompletableFuture[frameNumbers];
+
+        AtomicInteger processedFrame = new AtomicInteger(0);
+
         while (inputStream.available() != 0){
 
-            if (--count <= 0){
-                // I frame
-                Interframe current = divideImageFrame(readImage());
-                previous = current;
-                count = predictFrames;
+            byte[] frameBuffer = readImage(inputStream);
+            int frameIndex = frameCount++;
+
+             CompletableFuture<Interframe> interframeCompletableFuture = CompletableFuture
+                    .supplyAsync(()->{
+                        Interframe current = new Interframe(frameBuffer,height,width);
+                        frames.put(frameIndex,current);
+                        return current;
+                    });
+            interframeCompletableFuture.exceptionally(throwable -> {throwable.printStackTrace(System.err); return null;});
+            interframeCompletableFuture.thenRun(()->processedFrame.incrementAndGet());
+            futures[frameIndex]= interframeCompletableFuture;
 
 
-                frames.add(current);
+            for (int i = 0; i < predictFrames && inputStream.available() != 0; i++) {
+                byte[] predictFrameBuffer = readImage(inputStream);
+                int predictFrameIndex = frameCount++;
+
+                CompletableFuture<Void> predictframeFuture = interframeCompletableFuture.thenAcceptAsync(interframe -> {
+                    frames.put(predictFrameIndex, new PredictiveFrame(interframe, predictFrameBuffer, k));
+                });
+                predictframeFuture.exceptionally(throwable -> {throwable.printStackTrace(System.err); return null;});
+                predictframeFuture.thenRun(()->processedFrame.incrementAndGet());
+                futures[predictFrameIndex] = predictframeFuture;
             }
-            else{
-                // P frame
-                PredictiveFrame frame = new PredictiveFrame(previous,readImage(),k,height,width);
 
-                frames.add(frame);
-            }
-            System.out.print("Frame "+ Integer.toString(++frameCount) + "/" + Integer.toString(frameNumbers) + " Processed.\r");
         }
         inputStream.close();
-        System.out.println();
+
+        CompletableFuture<Void> allfutures = CompletableFuture.allOf(futures);
+
+        while (!allfutures.isDone()) {
+            System.out.print("\r");
+            System.out.print("Frame " + Integer.toString(processedFrame.get()) + "/" + Integer.toString(frameNumbers) + " Processed.");
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+
+        if(allfutures.isCompletedExceptionally())
+            allfutures.exceptionally(throwable -> {throwable.printStackTrace(System.err); return null;});
+
+        System.out.println("\rFIRST STAGE DONE");
+
         // Organize into background and foregrounds
         groupRegions();
+
     }
 
     /**
@@ -108,29 +138,6 @@ public class VideoEncoder {
             The consistency of the motion vector direction gives you an indication
             that all the macroblocks probably belong to the same object and are moving in a certain direction
          */
-    }
-
-
-    private Interframe divideImageFrame(byte[] buffer) {
-        Interframe frame = new Interframe(macroblockHeight,macroblockWidth);
-
-        int ind = 0;
-        for (int y = 0; y < height; y++) {
-            int my = y / blocksize;
-            int block_y = y - my * blocksize;
-            for (int x = 0; x < width; x++) {
-
-                byte r = buffer[ind];
-                byte g = buffer[ind + height * width];
-                byte b = buffer[ind + height * width * 2];
-                ind++;
-
-                int mx = x / blocksize;
-                int block_x = x - mx * blocksize;
-                frame.getBlock(mx,my).setPixel(block_x,block_y,r,g,b);
-            }
-        }
-        return frame;
     }
 
     public static void main(String[] argv){
