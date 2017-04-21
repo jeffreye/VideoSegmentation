@@ -4,8 +4,6 @@ import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Map;
 
 import static cs576.Utils.*;
 import static cs576.VideoEncoder.MACROBLOCK_LENGTH;
@@ -231,6 +229,24 @@ public class PredictiveFrame extends Frame {
          The consistency of the motion vector direction gives you an indication
          that all the macroblocks probably belong to the same object and are moving in a certain direction
          */
+        double tolerantRate=10;
+        int totalX=0;
+        int totalY=0;
+        int count=0;
+        for (Macroblock eachBlock : motionVectors) {
+            totalX+=eachBlock.getMotionVector().x;
+            totalY+=eachBlock.getMotionVector().y;
+            count++;
+        }
+        for (Macroblock eachBlock : motionVectors) {
+            if(eachBlock.getMotionVector().getDistance(totalX*1.0/count,totalY*1.0/count) < tolerantRate){
+                eachBlock.setLayer(0);
+            }
+            else{
+                eachBlock.setLayer(1);
+            }
+        }
+
 //
 //        for (Frame f : frames.values()) {
 //            if (f.getFrameType() != Frame.PREDICTIVEFRAME)
