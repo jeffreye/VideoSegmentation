@@ -1,6 +1,5 @@
 package cs576;
 
-import static java.lang.Math.PI;
 import static java.lang.Math.round;
 
 /**
@@ -8,8 +7,6 @@ import static java.lang.Math.round;
  */
 public class Utils {
     public static final int DCT_BLOCK_LENGTH = 8;
-    private static final double pi_len = PI / (double) DCT_BLOCK_LENGTH;
-
 
     private static final int[] LuminanceTable = {
             16, 11, 10, 16, 24, 40, 51, 61,
@@ -46,6 +43,13 @@ public class Utils {
     private static final float[] DequantizationChrominanceTable =
             DCT.scaleDequantizationMatrix(ChrominanceTable);
 
+    static byte clamp(int v) {
+        if (v > 255)
+            return (byte) 255;
+        else if (v < 0)
+            return (byte) 0;
+        return (byte) v;
+    }
 
     public static byte[] convertToRGB(float[][] imageY, float[][] imageU, float[][] imageV) {
         int height = imageY.length;
@@ -61,9 +65,9 @@ public class Utils {
                 float _v = imageV[k][l];
 
                 int pixelIndex = k * width + l;
-                rawImage[pixelIndex] = (byte) round(_y + 1.402f * (_v - 128f));
-                rawImage[pixelIndex + height * width] = (byte) round(_y - 0.344136f * (_u - 128f) - 0.714136f * (_v - 128f));
-                rawImage[pixelIndex + height * width * 2] = (byte) round(_y - 1.772f * (_u - 128f));
+                rawImage[pixelIndex] = clamp(round(_y + 1.402f * (_v - 128f)));
+                rawImage[pixelIndex + height * width] = clamp(round(_y - 0.344136f * (_u - 128f) - 0.714136f * (_v - 128f)));
+                rawImage[pixelIndex + height * width * 2] = clamp(round(_y + 1.772f * (_u - 128f)));
             }
         }
         return rawImage;
@@ -147,9 +151,12 @@ public class Utils {
         for (int i = 0; i < height; i += DCT_BLOCK_LENGTH) {
             for (int j = 0; j < width; j += DCT_BLOCK_LENGTH) {
 
-                float[][] y = calculateImageBlock(acValues[ind], DequantizationLuminanceTable, dcValues[ind]);ind++;
-                float[][] u = calculateImageBlock(acValues[ind], DequantizationChrominanceTable, dcValues[ind]);ind++;
-                float[][] v = calculateImageBlock(acValues[ind], DequantizationChrominanceTable, dcValues[ind]);ind++;
+                float[][] y = calculateImageBlock(acValues[ind], DequantizationLuminanceTable, dcValues[ind]);
+                ind++;
+                float[][] u = calculateImageBlock(acValues[ind], DequantizationChrominanceTable, dcValues[ind]);
+                ind++;
+                float[][] v = calculateImageBlock(acValues[ind], DequantizationChrominanceTable, dcValues[ind]);
+                ind++;
 
 
                 for (int k = 0; k < DCT_BLOCK_LENGTH; k++) {

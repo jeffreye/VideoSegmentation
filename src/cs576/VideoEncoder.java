@@ -1,9 +1,7 @@
 package cs576;
 
 import java.io.*;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentSkipListMap;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Created by Jeffreye on 4/1/2017.
@@ -42,97 +40,44 @@ public class VideoEncoder {
     }
 
     public void encode() throws IOException {
-        segment(PREDICT_FRAMES);
 
-        DataOutputStream outputStream = new DataOutputStream(new FileOutputStream(outputFile));
-        outputStream.writeInt(width);
-        outputStream.writeInt(height);
-        outputStream.writeInt(frames.size());
-
-        int frameCount = 0;
-        for (Frame f : frames.values()) {
-            System.out.print("\rFrame " + Integer.toString(++frameCount) + "/" + Integer.toString(frames.size()) + " Serialized.");
-            outputStream.write(f.getFrameType());
-            f.serialize(outputStream);
-            outputStream.flush();
-        }
-
-        outputStream.close();
-    }
-
-    /**
-     * Semantic Layering of Video
-     *
-     * @param predictFrames the number of predict frames after an Intraframe
-     */
-    private void segment(int predictFrames) throws IOException {
 
         InputStream inputStream = new FileInputStream(inputFile);
         // Mark first frame as an I frame
         int frameCount = 0;
         int frameNumbers = inputStream.available() / (3 * height * width);
 
-        CompletableFuture[] futures = new CompletableFuture[frameNumbers];
+        DataOutputStream outputStream = new DataOutputStream(new FileOutputStream(outputFile));
+        outputStream.writeInt(width);
+        outputStream.writeInt(height);
 
-        AtomicInteger processedFrame = new AtomicInteger(0);
+        outputStream.writeInt(frameNumbers);
 
+        Frame lastFrame = null;
         while (inputStream.available() != 0) {
 
             byte[] frameBuffer = readImage(inputStream);
-            int frameIndex = frameCount++;
 
-            CompletableFuture<Interframe> interframeCompletableFuture = CompletableFuture
-                    .supplyAsync(() -> {
-                        Interframe current = new Interframe(frameBuffer, height, width);
-                        frames.put(frameIndex, current);
-                        return current;
-                    });
-            interframeCompletableFuture.exceptionally(throwable -> {
-                throwable.printStackTrace(System.err);
-                return null;
-            });
-            interframeCompletableFuture.thenRun(() -> processedFrame.incrementAndGet());
-            futures[frameIndex] = interframeCompletableFuture;
-
-
-            for (int i = 0; i < predictFrames && inputStream.available() != 0; i++) {
-                byte[] predictFrameBuffer = readImage(inputStream);
-                int predictFrameIndex = frameCount++;
-
-                CompletableFuture<Void> predictframeFuture = interframeCompletableFuture.thenAcceptAsync(interframe -> {
-                    frames.put(predictFrameIndex, new PredictiveFrame(interframe, predictFrameBuffer, k));
-                });
-                predictframeFuture.exceptionally(throwable -> {
-                    throwable.printStackTrace(System.err);
-                    return null;
-                });
-                predictframeFuture.thenRun(() -> processedFrame.incrementAndGet());
-                futures[predictFrameIndex] = predictframeFuture;
+            if (frameCount % PREDICT_FRAMES == 0) {
+                lastFrame = new Interframe(frameBuffer, height, width);
+            } else {
+                lastFrame = new PredictiveFrame(lastFrame, frameBuffer, k);
             }
+
+            outputStream.write(lastFrame.getFrameType());
+            lastFrame.serialize(outputStream);
+            outputStream.flush();
+
+            frameCount++;
+            System.out.print("\r");
+            System.out.print("Frame " + Integer.toString(frameCount) + "/" + Integer.toString(frameNumbers) + " Processed.");
+
 
         }
         inputStream.close();
+        outputStream.close();
 
-        CompletableFuture<Void> allfutures = CompletableFuture.allOf(futures);
-
-        while (!allfutures.isDone()) {
-            System.out.print("\r");
-            System.out.print("Frame " + Integer.toString(processedFrame.get()) + "/" + Integer.toString(frameNumbers) + " Processed.");
-            try {
-                Thread.sleep(1000);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
-        }
-
-        if (allfutures.isCompletedExceptionally())
-            allfutures.exceptionally(throwable -> {
-                throwable.printStackTrace(System.err);
-                return null;
-            });
-
-        System.out.println("\rFIRST STAGE DONE");
-
+        System.out.println("\rDONE");
     }
 
 
