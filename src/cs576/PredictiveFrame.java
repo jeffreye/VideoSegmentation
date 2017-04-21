@@ -3,6 +3,7 @@ package cs576;
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -13,16 +14,17 @@ import static cs576.VideoEncoder.MACROBLOCK_LENGTH;
  * Created by Jeffreye on 4/15/2017.
  */
 public class PredictiveFrame extends Frame {
-    HashMap<Macroblock, MotionVector> motionVectors;
     private Frame referenceFrame;
+    private ArrayList<Macroblock> motionVectors;
 
+    // Error Image
     private byte[][] errorAcValues;
     private int[] errorDcValues;
 
     public PredictiveFrame(Frame referenceFrame, byte[] imageBuffer, int searchRange) {
         super(imageBuffer, referenceFrame.height, referenceFrame.width);
 
-        this.motionVectors = new HashMap<>();
+        this.motionVectors = new ArrayList<>();
         this.referenceFrame = referenceFrame;
 
         computeMotionVectors(referenceFrame, searchRange, imageY, height, width);
@@ -43,17 +45,17 @@ public class PredictiveFrame extends Frame {
 
         this.referenceFrame = referenceFrame;
         int size = inputStream.readInt();
-        this.motionVectors = new HashMap<>(size);
+        this.motionVectors = new ArrayList<>(size);
 
         for (int i = 0; i < size; i++) {
             int index = inputStream.readInt();
+            Macroblock mb = this.referenceFrame.getBlock(index);
+
             int x = inputStream.readInt();
             int y = inputStream.readInt();
+            mb.setMotionVector(new MotionVector(x, y));
 
-            this.motionVectors.put(
-                    this.referenceFrame.getBlock(index),
-                    new MotionVector(x, y)
-            );
+            this.motionVectors.add(mb);
         }
 
         this.errorAcValues = new byte[getDctValueSize(referenceFrame.height, referenceFrame.width)][];
@@ -88,6 +90,7 @@ public class PredictiveFrame extends Frame {
     /**
      * Compute motion vectors using block based SAD(sum of absolute difference brute search)
      * or fast motion estimation(FME), and then compute error frame
+     *
      * @param previous
      * @param k
      * @param currentY
@@ -130,8 +133,13 @@ public class PredictiveFrame extends Frame {
             if (min == Float.MAX_VALUE) {
                 // TODO: no matching block
                 System.err.println("no matching block found");
-            } else {
-                motionVectors.put(b1, new MotionVector(deltaX, deltaY));
+            }
+            else if(deltaX == 0 && deltaY == 0){
+                continue;
+            }
+            else {
+                b1.setMotionVector( new MotionVector(deltaX, deltaY));
+                motionVectors.add(b1);
             }
 
         }
@@ -162,6 +170,7 @@ public class PredictiveFrame extends Frame {
 
     /**
      * Reconstruct last frame
+     *
      * @param reconstructedImageY
      * @param reconstructedImageU
      * @param reconstructedImageV
@@ -170,15 +179,14 @@ public class PredictiveFrame extends Frame {
      * @param width
      * @param referenceFrame
      */
-    private static void reconstruct(float[][] reconstructedImageY, float[][] reconstructedImageU, float[][] reconstructedImageV, HashMap<Macroblock, MotionVector> motionVectors, int height, int width, Frame referenceFrame) {
+    private static void reconstruct(float[][] reconstructedImageY, float[][] reconstructedImageU, float[][] reconstructedImageV, ArrayList<Macroblock> motionVectors, int height, int width, Frame referenceFrame) {
         // TODO: reconstruct by using decompressed last frame
 
-        for (Map.Entry<Macroblock, MotionVector> kvp : motionVectors.entrySet()) {
-            Macroblock mc = kvp.getKey();
-            int originalX = mc.getX();
-            int originalY = mc.getY();
-            int x = originalX + kvp.getValue().x;
-            int y = originalY + kvp.getValue().y;
+        for (Macroblock mb : motionVectors) {
+            int originalX = mb.getX();
+            int originalY = mb.getY();
+            int x = originalX + mb.getMotionVector().x;
+            int y = originalY + mb.getMotionVector().y;
 
             // Fill pixels from macroblocks
             for (int i = 0; i < VideoEncoder.MACROBLOCK_LENGTH; i++) {
@@ -254,11 +262,11 @@ public class PredictiveFrame extends Frame {
 
         // Serialize motion vectors
         os.writeInt(motionVectors.size());
-        for (Map.Entry<Macroblock, MotionVector> kvp : motionVectors.entrySet()) {
+        for (Macroblock mb : motionVectors) {
 
-            os.writeInt(kvp.getKey().getBlockIndex());
+            os.writeInt(mb.getBlockIndex());
 
-            MotionVector v = kvp.getValue();
+            MotionVector v = mb.getMotionVector();
             os.writeInt(v.x);
             os.writeInt(v.y);
         }

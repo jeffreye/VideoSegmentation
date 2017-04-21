@@ -15,6 +15,7 @@ hs_err_pid*
 # Video Files
 *.rgb
 *.cmp
+*.raw
 
 .idea/*
 .idea/workspace.xml

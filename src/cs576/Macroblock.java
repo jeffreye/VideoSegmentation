@@ -4,6 +4,7 @@ import sun.awt.windows.WingDings;
 
 import java.io.DataInput;
 import java.io.IOException;
+import java.io.PrintStream;
 
 import static cs576.VideoEncoder.MACROBLOCK_LENGTH;
 
@@ -18,11 +19,14 @@ public class Macroblock {
     private int index;
     private Frame frame;
 
+    private MotionVector motionVector;
+
     public Macroblock(Frame frame, int x, int y, int blockIndex) {
         this.frame = frame;
         this.x = x;
         this.y = y;
         this.index = blockIndex;
+        this.motionVector = new MotionVector(0,0);
     }
 
     public int getLayer() {
@@ -45,4 +49,11 @@ public class Macroblock {
         return index;
     }
 
+    public MotionVector getMotionVector() {
+        return motionVector;
+    }
+
+    public void setMotionVector(MotionVector motionVector) {
+        this.motionVector = motionVector;
+    }
 }
