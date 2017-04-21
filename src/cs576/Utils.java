@@ -22,16 +22,11 @@ public class Utils {
             72, 92, 95, 98, 112, 100, 103, 99,
     };
 
-    private static final int[] LuminanceTableDiv2 = {
-            8, 6, 5, 8, 12, 20, 26, 31,
-            6, 6, 7, 10, 13, 29, 30, 28,
-            7, 7, 8, 12, 20, 29, 35, 28,
-            7, 9, 11, 15, 26, 44, 40, 31,
-            9, 11, 19, 28, 34, 55, 52, 39,
-            12, 18, 28, 32, 41, 52, 57, 46,
-            25, 32, 39, 44, 52, 61, 60, 51,
-            36, 46, 48, 49, 56, 50, 52, 50,
-    };
+    private static final float[] QuantizationLuminanceTable =
+            DCT.scaleQuantizationMatrix(LuminanceTable);
+
+    private static final float[] DequantizationLuminanceTable =
+            DCT.scaleDequantizationMatrix(LuminanceTable);
 
     private static final int[] ChrominanceTable = {
             17, 18, 24, 47, 99, 99, 99, 99,
@@ -44,17 +39,13 @@ public class Utils {
             99, 99, 99, 99, 99, 99, 99, 99,
     };
 
-    private static final int[] ChrominanceTableDiv2 = {
-            9, 9, 12, 24, 50, 50, 50, 50,
-            9, 11, 13, 33, 50, 50, 50, 50,
-            12, 13, 28, 50, 50, 50, 50, 50,
-            24, 33, 50, 50, 50, 50, 50, 50,
-            50, 50, 50, 50, 50, 50, 50, 50,
-            50, 50, 50, 50, 50, 50, 50, 50,
-            50, 50, 50, 50, 50, 50, 50, 50,
-            50, 50, 50, 50, 50, 50, 50, 50,
 
-    };
+    private static final float[] QuantizationChrominanceTable =
+            DCT.scaleQuantizationMatrix(ChrominanceTable);
+
+    private static final float[] DequantizationChrominanceTable =
+            DCT.scaleDequantizationMatrix(ChrominanceTable);
+
 
     public static byte[] convertToRGB(float[][] imageY, float[][] imageU, float[][] imageV) {
         int height = imageY.length;
@@ -78,7 +69,6 @@ public class Utils {
         return rawImage;
     }
 
-
     public static void convertToYUV(byte[] imageBuffer, int height, int width, float[][] imageY, float[][] imageU, float[][] imageV) {
         for (int k = 0; k < height; k++) {
             for (int l = 0; l < width; l++) {
@@ -88,8 +78,8 @@ public class Utils {
                 int b = imageBuffer[pixelIndex + height * width * 2] & 0xFF;
 
                 imageY[k][l] = 0.2990f * r + 0.5870f * g + 0.1140f * b;
-                imageU[k][l] = 128f - 0.1687f * r + 0.3313f * g + 0.5000f * b;
-                imageV[k][l] = 128f + 0.5000f * r + 0.418688f * g + 0.081312f * b;
+                imageU[k][l] = 128f - 0.1687f * r - 0.3313f * g + 0.5000f * b;
+                imageV[k][l] = 128f + 0.5000f * r - 0.418688f * g - 0.081312f * b;
             }
         }
     }
@@ -104,15 +94,15 @@ public class Utils {
         for (int i = 0; i < height; i += DCT_BLOCK_LENGTH) {
             for (int j = 0; j < width; j += DCT_BLOCK_LENGTH) {
                 copyToTemp(height, width, true, temp, i, j, imageY);
-                dcValues[ind] = calculateDCTBlock(temp, LuminanceTable, acValues[ind] = new byte[64]);
+                dcValues[ind] = calculateDCTBlock(temp, QuantizationLuminanceTable, acValues[ind] = new byte[64]);
                 ind++;
 
                 copyToTemp(height, width, false, temp, i, j, imageU);
-                dcValues[ind] = calculateDCTBlock(temp, ChrominanceTable, acValues[ind] = new byte[64]);
+                dcValues[ind] = calculateDCTBlock(temp, QuantizationChrominanceTable, acValues[ind] = new byte[64]);
                 ind++;
 
                 copyToTemp(height, width, false, temp, i, j, imageV);
-                dcValues[ind] = calculateDCTBlock(temp, ChrominanceTable, acValues[ind] = new byte[64]);
+                dcValues[ind] = calculateDCTBlock(temp, QuantizationChrominanceTable, acValues[ind] = new byte[64]);
                 ind++;
 
             }
@@ -131,13 +121,13 @@ public class Utils {
     }
 
 
-    private static int calculateDCTBlock(float[][] input, int[] quantizeTable, byte[] output) {
+    private static int calculateDCTBlock(float[][] input, float[] quantizeTable, byte[] output) {
         int index = 0;
         DCT.forwardDCT(input);
-        int ac = round(input[0][0] / quantizeTable[index]);
+        int ac = round(input[0][0] * quantizeTable[index]);
         for (int i = 0; i < DCT_BLOCK_LENGTH; i++) {
             for (int j = 0; j < DCT_BLOCK_LENGTH; j++) {
-                output[index] = (byte) Math.round(input[i][j] / quantizeTable[index]);
+                output[index] = (byte) Math.round(input[i][j] * quantizeTable[index]);
                 index++;
             }
         }
@@ -157,9 +147,9 @@ public class Utils {
         for (int i = 0; i < height; i += DCT_BLOCK_LENGTH) {
             for (int j = 0; j < width; j += DCT_BLOCK_LENGTH) {
 
-                float[][] y = calculateImageBlock(acValues[ind], LuminanceTable, dcValues[ind]);ind++;
-                float[][] u = calculateImageBlock(acValues[ind], ChrominanceTable, dcValues[ind]);ind++;
-                float[][] v = calculateImageBlock(acValues[ind], ChrominanceTable, dcValues[ind]);ind++;
+                float[][] y = calculateImageBlock(acValues[ind], DequantizationLuminanceTable, dcValues[ind]);ind++;
+                float[][] u = calculateImageBlock(acValues[ind], DequantizationChrominanceTable, dcValues[ind]);ind++;
+                float[][] v = calculateImageBlock(acValues[ind], DequantizationChrominanceTable, dcValues[ind]);ind++;
 
 
                 for (int k = 0; k < DCT_BLOCK_LENGTH; k++) {
@@ -177,7 +167,7 @@ public class Utils {
         }
     }
 
-    private static float[][] calculateImageBlock(byte[] dct, int[] quantizeTable, int dc) {
+    private static float[][] calculateImageBlock(byte[] dct, float[] quantizeTable, int dc) {
         float[][] input = new float[DCT_BLOCK_LENGTH][DCT_BLOCK_LENGTH];
         int index = 0;
         for (int i = 0; i < DCT_BLOCK_LENGTH; i++) {

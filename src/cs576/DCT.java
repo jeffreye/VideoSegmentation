@@ -95,22 +95,27 @@ public class DCT {
     private static final float Q = C2 - C6;
     private static final float R = C2 + C6;
 
-    public static void scaleQuantizationMatrix(final float[][] matrix) {
+    public static float[]  scaleQuantizationMatrix(final int[] matrix) {
+        float[] output = new float[64];
         for (int y = 0; y < 8; y++) {
             for (int x = 0; x < 8; x++) {
-                matrix[y][x] *= dctScalingFactors[y]
+                output[8 * y + x] = 1.0f / matrix[8 * y + x]
+                        * dctScalingFactors[y]
                         * dctScalingFactors[x];
             }
         }
+        return output;
     }
 
-    public static void scaleDequantizationMatrix(final float[][] matrix) {
+    public static float[]  scaleDequantizationMatrix(final int[] matrix) {
+        float[] output = new float[64];
         for (int y = 0; y < 8; y++) {
             for (int x = 0; x < 8; x++) {
-                matrix[y][x] *= idctScalingFactors[y]
+                output[8 * y + x] = matrix[8 * y + x] * idctScalingFactors[y]
                         * idctScalingFactors[x];
             }
         }
+        return output;
     }
 
     /**
@@ -363,6 +368,7 @@ public class DCT {
             matrix[6][i] = m3 - tmp3;
             matrix[7][i] = m4 - a7;
         }
+
         return matrix;
     }
 }
