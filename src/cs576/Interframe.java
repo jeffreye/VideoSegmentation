@@ -20,6 +20,9 @@ public class Interframe extends Frame {
         this.acValues = new byte[getDctValueSize(height, width)][];
         this.dcValues = new int[acValues.length];
         calculateDCTValues(imageY, imageU, imageV, height, width, acValues, dcValues);
+
+        // Reconstruct for next frame
+        calculateImage(acValues,dcValues,height,width,imageY, imageU, imageV);
     }
 
 

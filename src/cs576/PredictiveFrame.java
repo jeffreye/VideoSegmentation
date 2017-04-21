@@ -29,6 +29,7 @@ public class PredictiveFrame extends Frame {
 
         computeMotionVectors(referenceFrame, searchRange, imageY, height, width);
         computeErrorFrame();
+
         groupRegions();
     }
 
@@ -58,7 +59,7 @@ public class PredictiveFrame extends Frame {
             this.motionVectors.add(mb);
         }
 
-        this.errorAcValues = new byte[getDctValueSize(referenceFrame.height, referenceFrame.width)][];
+        this.errorAcValues = new byte[getDctValueSize(height, width)][];
         this.errorDcValues = new int[errorAcValues.length];
         for (int i = 0; i < errorAcValues.length; i++) {
             errorDcValues[i] = inputStream.readInt();
@@ -71,7 +72,7 @@ public class PredictiveFrame extends Frame {
         float[][] errorImageU = new float[height][width];
         float[][] errorImageV = new float[height][width];
         calculateImage(
-                this.errorAcValues, this.errorDcValues, referenceFrame.height, referenceFrame.width,
+                this.errorAcValues, this.errorDcValues, height, width,
                 errorImageY, errorImageU, errorImageV);
 
 
@@ -151,25 +152,44 @@ public class PredictiveFrame extends Frame {
         float[][] reconstructedImageU = new float[height][width];
         float[][] reconstructedImageV = new float[height][width];
 
-        reconstruct(reconstructedImageY, reconstructedImageU, reconstructedImageV, motionVectors, height, width, referenceFrame);
+        reconstruct(reconstructedImageY, reconstructedImageU, reconstructedImageV,
+                motionVectors, height, width, referenceFrame);
 
-
+        // Compute error image
+        float[][] errorImageY = new float[height][width];
+        float[][] errorImageU = new float[height][width];
+        float[][] errorImageV = new float[height][width];
         for (int i = 0; i < height; i++) {
             for (int j = 0; j < width; j++) {
-                reconstructedImageY[i][j] = imageY[i][j] - reconstructedImageY[i][j];
-                reconstructedImageU[i][j] = imageU[i][j] - reconstructedImageU[i][j];
-                reconstructedImageV[i][j] = imageV[i][j] - reconstructedImageV[i][j];
+                errorImageY[i][j] = imageY[i][j] - reconstructedImageY[i][j];
+                errorImageU[i][j] = imageU[i][j] - reconstructedImageU[i][j];
+                errorImageV[i][j] = imageV[i][j] - reconstructedImageV[i][j];
             }
         }
 
         this.errorAcValues = new byte[getDctValueSize(height, width)][];
         this.errorDcValues = new int[errorAcValues.length];
+        calculateDCTValues(
+                errorImageY, errorImageU, errorImageV,
+                height, width,
+                errorAcValues, errorDcValues);
 
-        calculateDCTValues(reconstructedImageY, reconstructedImageU, reconstructedImageV, height, width, errorAcValues, errorDcValues);
+
+        // Reconstruct for next frame
+        calculateImage(errorAcValues,errorDcValues,height,width,errorImageY, errorImageU, errorImageV);
+
+        for (int i = 0; i < height; i++) {
+            for (int j = 0; j < width; j++) {
+                imageY[i][j] = errorImageY[i][j] + reconstructedImageY[i][j];
+                imageU[i][j] = errorImageU[i][j] + reconstructedImageU[i][j];
+                imageV[i][j] = errorImageV[i][j] + reconstructedImageV[i][j];
+            }
+        }
+
     }
 
     /**
-     * Reconstruct last frame
+     * Reconstruct last frame by using motion vectors
      *
      * @param reconstructedImageY
      * @param reconstructedImageU
@@ -180,8 +200,6 @@ public class PredictiveFrame extends Frame {
      * @param referenceFrame
      */
     private static void reconstruct(float[][] reconstructedImageY, float[][] reconstructedImageU, float[][] reconstructedImageV, ArrayList<Macroblock> motionVectors, int height, int width, Frame referenceFrame) {
-        // TODO: reconstruct by using decompressed last frame
-
         for (Macroblock mb : motionVectors) {
             int originalX = mb.getX();
             int originalY = mb.getY();
