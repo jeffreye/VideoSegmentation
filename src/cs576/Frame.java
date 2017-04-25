@@ -12,6 +12,7 @@ import static cs576.VideoEncoder.MACROBLOCK_LENGTH;
 public abstract class Frame {
     public static final int INTERFRAME = 0;
     public static final int PREDICTIVEFRAME = 1;
+    public static final int SEGMENTEDFRAME = 2;
 
     public final int height;
     public final int width;

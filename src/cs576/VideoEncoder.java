@@ -1,9 +1,8 @@
 package cs576;
 
 import java.io.*;
-import java.nio.ByteBuffer;
-import java.nio.channels.FileChannel;
-import java.util.concurrent.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -17,8 +16,7 @@ public class VideoEncoder {
     private String outputFile;
     private int width;
     private int height;
-    private static final int k = 10;
-    private static final int PREDICT_FRAMES = 4;
+    private static final int k = 16;
 
     private static final int BATCH_WORKS = 20;
 
@@ -49,28 +47,69 @@ public class VideoEncoder {
 
         InputStream inputStream = new FileInputStream(inputFile);
         // Mark first frame as an I frame
-        int frameCount = 0;
         int frameNumbers = inputStream.available() / (3 * height * width);
 
         final DataOutputStream outputStream =
                 new DataOutputStream(
-                new BufferedOutputStream(
-                        new FileOutputStream(outputFile),
-                        50*1024*1024)
+                        new BufferedOutputStream(
+                                new FileOutputStream(outputFile),
+                                50 * 1024 * 1024)
                 );
+
         outputStream.writeInt(width);
         outputStream.writeInt(height);
 
         outputStream.writeInt(frameNumbers);
 
-        CompletableFuture<Frame> lastFrame = null;
+        encodeSync(inputStream, outputStream, frameNumbers);
+
+        inputStream.close();
+        outputStream.close();
+
+    }
+
+    public void encodeSync(InputStream inputStream, DataOutputStream outputStream, int frameNumbers) throws IOException {
+        int frameCount = 0;
+        SegmentedFrame prev = new SegmentedFrame(readImage(inputStream), height, width);
+        while (inputStream.available() != 0) {
+            SegmentedFrame curr = new SegmentedFrame(readImage(inputStream), height, width)
+                    .computeDiff(prev, k);
+
+
+            prev.serialize(outputStream);
+            frameCount++;
+            outputStream.flush();
+
+            prev = curr;
+
+            // release reference so that GC could collect them
+            prev.referenceFrame = null;
+
+            System.out.print("\r");
+            System.out.print("Frame " + Integer.toString(frameCount) + "/" + Integer.toString(frameNumbers) + " Processed.");
+
+        }
+
+        prev.serialize(outputStream);
+        frameCount++;
+        outputStream.flush();
+
+        System.out.println("\rDONE");
+    }
+
+    public void encodeAsync(InputStream inputStream, DataOutputStream outputStream, int frameNumbers) throws IOException {
+        int frameCount = 0;
+        CompletableFuture<SegmentedFrame> lastFrame =
+                CompletableFuture.completedFuture(readImage(inputStream))
+                        .thenApplyAsync(firstFrame -> new SegmentedFrame(firstFrame, height, width));
+
         CompletableFuture<Void> outputFuture = CompletableFuture.completedFuture(null);
         AtomicInteger processedInteger = new AtomicInteger(0);
 
         while (inputStream.available() != 0) {
 
-            if (frameCount % BATCH_WORKS == 0 && lastFrame != null){
-                while (!lastFrame.isDone()){
+            if (frameCount % BATCH_WORKS == 0 && frameCount != 0) {
+                while (!lastFrame.isDone()) {
                     try {
                         Thread.sleep(1000);
                     } catch (InterruptedException e) {
@@ -82,28 +121,16 @@ public class VideoEncoder {
                 }
             }
 
-            byte[] frameBuffer = readImage(inputStream);
+            lastFrame = CompletableFuture
+                    .completedFuture(readImage(inputStream))
+                    .thenApplyAsync(frameBuffer -> new SegmentedFrame(frameBuffer, height, width))
+                    .thenCombine(lastFrame, (curr, last) -> curr.computeDiff(last, k));
 
-            if (frameCount % PREDICT_FRAMES == 0 && frameCount != frameNumbers) {
-                lastFrame = CompletableFuture.supplyAsync(() -> new Interframe(frameBuffer, height, width));
-            } else {
-                lastFrame =
-                        CompletableFuture
-                        .supplyAsync(() ->  new PredictiveFrame(frameBuffer, height, width))
-                        .thenCombineAsync(lastFrame,(curr,last)->curr.computeDiff(last,k));
-            }
-
-            outputFuture = outputFuture.thenAcceptBoth(lastFrame,(o,frame)->{
-                if  (frame.getFrameType() == Frame.INTERFRAME){
-                    // Interframe haven't segementated yet
-                    return;
-                }
-
-                Frame referenceFrame = ((PredictiveFrame)frame).referenceFrame;
-                if (referenceFrame.getFrameType() == Frame.INTERFRAME){
+            outputFuture = outputFuture.thenAcceptBoth(lastFrame, (o, frame) -> {
+                SegmentedFrame previousFrame = frame.referenceFrame;
+                if (previousFrame.referenceFrame == null) {
                     try {
-                        outputStream.write(referenceFrame.getFrameType());
-                        referenceFrame.serialize(outputStream);
+                        previousFrame.serialize(outputStream);
                         processedInteger.incrementAndGet();
                     } catch (IOException e) {
                         e.printStackTrace();
@@ -111,27 +138,22 @@ public class VideoEncoder {
                 }
 
                 try {
-                    outputStream.write(frame.getFrameType());
                     frame.serialize(outputStream);
                     processedInteger.incrementAndGet();
                     outputStream.flush();
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
+
+                // release reference so that GC could collect them
+                previousFrame.referenceFrame = null;
             });
 
             frameCount++;
-
-//            outputFuture.join();
-//            System.out.print("\r");
-//            System.out.print("Frame " + Integer.toString(frameCount) + "/" + Integer.toString(frameNumbers) + " Processed.");
-
         }
 
-        inputStream.close();
 
         outputFuture.join();
-        outputStream.close();
 
         System.out.println("\rDONE");
     }

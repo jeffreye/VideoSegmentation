@@ -1,7 +1,6 @@
 package cs576;
 
 import java.io.*;
-import java.util.Arrays;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -19,7 +18,6 @@ public class VideoDecoder {
     private int height;
 
 
-
     public VideoDecoder(String inputFile, String outputFile, int foregroundQuantizationValue, int backgroundQuantizationValue) throws FileNotFoundException {
         this.inputFile = inputFile;
         this.outputFile = outputFile;
@@ -28,13 +26,39 @@ public class VideoDecoder {
     }
 
     public void decode() throws IOException {
-        DataInputStream inputStream = new DataInputStream(new BufferedInputStream(new FileInputStream(this.inputFile),1024*1024));
+        DataInputStream inputStream = new DataInputStream(new BufferedInputStream(new FileInputStream(this.inputFile), 1024 * 1024));
         width = inputStream.readInt();
         height = inputStream.readInt();
         int frameNumbers = inputStream.readInt();
 
+        decodeSync(inputStream, frameNumbers);
+
+        inputStream.close();
+    }
+    public void decodeSync(DataInputStream inputStream, int frameNumbers) throws IOException {
         int frameCount = 0;
-        CompletableFuture<Frame> lastFrame = null;
+
+        FileOutputStream outputStream = new FileOutputStream(outputFile);
+        SegmentedFrame lastFrame = null;
+        while (inputStream.available() != 0) {
+
+            lastFrame = new SegmentedFrame(height,width,inputStream)
+                    .reconstruct(lastFrame,foregroundQuantizationValue,backgroundQuantizationValue);
+
+            outputStream.write(lastFrame.getRawImage());
+            outputStream.flush();
+
+            frameCount++;
+
+            System.out.print("\r");
+            System.out.print("Frame " + Integer.toString(frameCount) + "/" + Integer.toString(frameNumbers) + " Processed.");
+        }
+        System.out.println("\rDONE");
+    }
+
+    public void decodeAsync(DataInputStream inputStream, int frameNumbers) throws IOException {
+        int frameCount = 0;
+        CompletableFuture<SegmentedFrame> lastFrame = CompletableFuture.completedFuture(null);
         CompletableFuture<Void> outputFuture = CompletableFuture.completedFuture(null);
         AtomicInteger processedInteger = new AtomicInteger(0);
 
@@ -43,8 +67,8 @@ public class VideoDecoder {
         while (inputStream.available() != 0) {
 
 
-            if (frameCount % BATCH_WORKS == 0 && lastFrame != null){
-                while (!lastFrame.isDone()){
+            if (frameCount % BATCH_WORKS == 0 && lastFrame != null) {
+                while (!lastFrame.isDone()) {
                     try {
                         Thread.sleep(1000);
                     } catch (InterruptedException e) {
@@ -55,18 +79,9 @@ public class VideoDecoder {
 
                 }
             }
-            
-            int type = inputStream.read();
-            if (type == Frame.INTERFRAME) {
-                final Interframe frame = new Interframe(height, width, inputStream);
 
-                lastFrame = CompletableFuture.supplyAsync(()->frame.reconstruct(foregroundQuantizationValue,backgroundQuantizationValue));
-
-            } else if (type == Frame.PREDICTIVEFRAME) {
-                final PredictiveFrame frame = new PredictiveFrame(height,width,inputStream);
-
-                lastFrame = lastFrame.thenApplyAsync(last -> frame.reconstruct(last,foregroundQuantizationValue,backgroundQuantizationValue));
-            }
+            CompletableFuture<SegmentedFrame> current = CompletableFuture.completedFuture(new SegmentedFrame(height, width, inputStream));
+            lastFrame = lastFrame.thenCombineAsync(current, (last, curr) -> curr.reconstruct(last, foregroundQuantizationValue, backgroundQuantizationValue));
 
             outputFuture.thenAcceptBoth(lastFrame, (o, last) -> {
                 try {
@@ -81,8 +96,6 @@ public class VideoDecoder {
             frameCount++;
         }
 
-
-        inputStream.close();
         outputFuture.join();
         outputStream.close();
     }
@@ -95,7 +108,7 @@ public class VideoDecoder {
                 String output = input.substring(0, input.length() - 4).concat(".raw");
                 int quantizationForeground = Integer.parseInt(argv[1]);
                 int quantizationBackground = Integer.parseInt(argv[2]);
-                VideoDecoder decoder = new VideoDecoder(input, output, quantizationForeground,quantizationBackground);
+                VideoDecoder decoder = new VideoDecoder(input, output, quantizationForeground, quantizationBackground);
                 decoder.decode();
             } catch (Exception e) {
                 e.printStackTrace(System.err);

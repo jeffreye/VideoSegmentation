@@ -72,7 +72,7 @@ public class VideoReader {
         try {
             if (is.available() == 0) {
                 is.close();
-                is = new FileInputStream(file);
+                is = new BufferedInputStream(new FileInputStream(file),960*540*3*30);
             }
 
 
@@ -90,6 +90,10 @@ public class VideoReader {
 //
 //            Utils.convertToYUV(bytes,height,width,imageY,imageU,imageV);
 //            Utils.forwardDCT(imageY,imageU,imageV,dctValues);
+//            for (int i = 0; i < dctValues.length; i++) {
+//                Utils.quantize(dctValues[i],1);
+//                Utils.dequantize(dctValues[i],1);
+//            }
 //            Utils.inverseDCT(dctValues,imageY,imageU,imageV);
 //            bytes = Utils.convertToRGB(imageY,imageU,imageV);
 

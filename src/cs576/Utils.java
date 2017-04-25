@@ -195,11 +195,12 @@ public class Utils {
         }
     }
 
-    static final float[][] temp = new float[DCT_BLOCK_LENGTH][DCT_BLOCK_LENGTH];
+//    static final float[][] temp = new float[DCT_BLOCK_LENGTH][DCT_BLOCK_LENGTH];
     private static void forwardDCTBlock(float[][] image, int x, int y, boolean isLuminance,float[] output) {
         int height = image.length;
         int width = image[0].length;
 
+        float[][] temp = new float[DCT_BLOCK_LENGTH][DCT_BLOCK_LENGTH];
         copyToTemp(height, width, isLuminance, temp, x, y, image);
         DCT.forwardDCT(temp);
 
@@ -234,6 +235,14 @@ public class Utils {
         }
 
         DCT.inverseDCT(output);
+
+//        index = 0;
+//        for (int i = 0; i < DCT_BLOCK_LENGTH; i++) {
+//            for (int j = 0; j < DCT_BLOCK_LENGTH; j++) {
+//                output[i][j] *= quantizeTable[index];
+//                index++;
+//            }
+//        }
         return output;
     }
 
