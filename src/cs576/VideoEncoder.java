@@ -1,7 +1,10 @@
 package cs576;
 
 import java.io.*;
-import java.util.concurrent.ConcurrentSkipListMap;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Created by Jeffreye on 4/1/2017.
@@ -16,6 +19,8 @@ public class VideoEncoder {
     private int height;
     private static final int k = 10;
     private static final int PREDICT_FRAMES = 4;
+
+    private static final int BATCH_WORKS = 20;
 
     private ConcurrentSkipListMap<Integer, Frame> frames;
 
@@ -47,34 +52,85 @@ public class VideoEncoder {
         int frameCount = 0;
         int frameNumbers = inputStream.available() / (3 * height * width);
 
-        DataOutputStream outputStream = new DataOutputStream(new FileOutputStream(outputFile));
+        final DataOutputStream outputStream =
+                new DataOutputStream(
+                new BufferedOutputStream(
+                        new FileOutputStream(outputFile),
+                        50*1024*1024)
+                );
         outputStream.writeInt(width);
         outputStream.writeInt(height);
 
         outputStream.writeInt(frameNumbers);
 
-        Frame lastFrame = null;
+        CompletableFuture<Frame> lastFrame = null;
+        CompletableFuture<Void> outputFuture = CompletableFuture.completedFuture(null);
+        AtomicInteger processedInteger = new AtomicInteger(0);
+
         while (inputStream.available() != 0) {
+
+            if (frameCount % BATCH_WORKS == 0 && lastFrame != null){
+                while (!lastFrame.isDone()){
+                    try {
+                        Thread.sleep(1000);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                    System.out.print("\r");
+                    System.out.print("Frame " + Integer.toString(processedInteger.get()) + "/" + Integer.toString(frameNumbers) + " Processed.");
+
+                }
+            }
 
             byte[] frameBuffer = readImage(inputStream);
 
-            if (frameCount % PREDICT_FRAMES == 0) {
-                lastFrame = new Interframe(frameBuffer, height, width);
+            if (frameCount % PREDICT_FRAMES == 0 && frameCount != frameNumbers) {
+                lastFrame = CompletableFuture.supplyAsync(() -> new Interframe(frameBuffer, height, width));
             } else {
-                lastFrame = new PredictiveFrame(lastFrame, frameBuffer, k);
+                lastFrame =
+                        CompletableFuture
+                        .supplyAsync(() ->  new PredictiveFrame(frameBuffer, height, width))
+                        .thenCombineAsync(lastFrame,(curr,last)->curr.computeDiff(last,k));
             }
 
-            outputStream.write(lastFrame.getFrameType());
-            lastFrame.serialize(outputStream);
-            outputStream.flush();
+            outputFuture = outputFuture.thenAcceptBoth(lastFrame,(o,frame)->{
+                if  (frame.getFrameType() == Frame.INTERFRAME){
+                    // Interframe haven't segementated yet
+                    return;
+                }
+
+                Frame referenceFrame = ((PredictiveFrame)frame).referenceFrame;
+                if (referenceFrame.getFrameType() == Frame.INTERFRAME){
+                    try {
+                        outputStream.write(referenceFrame.getFrameType());
+                        referenceFrame.serialize(outputStream);
+                        processedInteger.incrementAndGet();
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                }
+
+                try {
+                    outputStream.write(frame.getFrameType());
+                    frame.serialize(outputStream);
+                    processedInteger.incrementAndGet();
+                    outputStream.flush();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            });
 
             frameCount++;
-            System.out.print("\r");
-            System.out.print("Frame " + Integer.toString(frameCount) + "/" + Integer.toString(frameNumbers) + " Processed.");
 
+//            outputFuture.join();
+//            System.out.print("\r");
+//            System.out.print("Frame " + Integer.toString(frameCount) + "/" + Integer.toString(frameNumbers) + " Processed.");
 
         }
+
         inputStream.close();
+
+        outputFuture.join();
         outputStream.close();
 
         System.out.println("\rDONE");

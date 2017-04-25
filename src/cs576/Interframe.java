@@ -1,8 +1,8 @@
 package cs576;
 
-import java.io.DataInput;
-import java.io.DataOutput;
-import java.io.IOException;
+import java.io.*;
+import java.nio.ByteBuffer;
+import java.nio.FloatBuffer;
 
 import static cs576.Utils.*;
 import static cs576.VideoEncoder.MACROBLOCK_LENGTH;
@@ -11,23 +11,19 @@ import static cs576.VideoEncoder.MACROBLOCK_LENGTH;
  * Created by Jeffreye on 4/1/2017.
  */
 public class Interframe extends Frame {
-    private byte[][] acValues;
-    private int[] dcValues;
+    private float[][] dctValues;
+
+//    private byte[] outputBuffer;
 
     public Interframe(byte[] imageBuffer, int height, int width) {
-        super(imageBuffer,height,width);
+        super(imageBuffer, height, width);
 
-        this.acValues = new byte[getDctValueSize(height, width)][];
-        this.dcValues = new int[acValues.length];
-        calculateDCTValues(imageY, imageU, imageV, height, width, acValues, dcValues);
-
-        // Reconstruct for next frame
-        calculateImage(acValues,dcValues,height,width,imageY, imageU, imageV);
+        this.dctValues = new float[getDctValueSize(height, width)][64];
+        forwardDCT(imageY, imageU, imageV, dctValues);
     }
 
-
     public Interframe(int height, int width, DataInput inputStream) throws IOException {
-        super(height,width);
+        super(height, width);
 
         int blockIndex = 0;
         for (int i = 0; i < height; i += MACROBLOCK_LENGTH) {
@@ -37,16 +33,61 @@ public class Interframe extends Frame {
             }
         }
 
-        this.acValues = new byte[getDctValueSize(height, width)][];
-        this.dcValues = new int[acValues.length];
-        for (int i = 0; i < acValues.length; i++) {
-            dcValues[i] = inputStream.readInt();
-            inputStream.readFully(acValues[i] = new byte[64]);
+        this.dctValues = new float[getDctValueSize(height, width)][64];
+        for (int i = 0; i < dctValues.length; i++) {
+            for (int j = 0; j < 64; j++) {
+                dctValues[i][j] = inputStream.readFloat();
+            }
+        }
+    }
+
+
+    public Interframe(int height, int width, DataInput inputStream,int foregroundQuantizationValue, int backgroundQuantizationValue) throws IOException {
+        super(height, width);
+
+        int blockIndex = 0;
+        for (int i = 0; i < height; i += MACROBLOCK_LENGTH) {
+            for (int j = 0; j < width; j += MACROBLOCK_LENGTH) {
+                macroblocks[blockIndex].setLayer(inputStream.readInt());
+                blockIndex++;
+            }
+        }
+
+        this.dctValues = new float[getDctValueSize(height, width)][64];
+        for (int i = 0; i < dctValues.length; i++) {
+            for (int j = 0; j < 64; j++) {
+                dctValues[i][j] = inputStream.readFloat();
+            }
         }
         // Done reading
 
 
-        calculateImage(acValues, dcValues, height, width, this.imageY, this.imageU, this.imageV);
+        reconstruct(foregroundQuantizationValue, backgroundQuantizationValue);
+    }
+
+    public Interframe reconstruct(int foregroundQuantizationValue, int backgroundQuantizationValue) {
+        int blockIndex;
+        int macroblockWidth = 1 + (width - 1) / MACROBLOCK_LENGTH;
+        int dctIndex = 0;
+        for (int i = 0; i < height; i += DCT_BLOCK_LENGTH) {
+            for (int j = 0; j < width; j += DCT_BLOCK_LENGTH) {
+                blockIndex = i / MACROBLOCK_LENGTH * macroblockWidth + j / MACROBLOCK_LENGTH;
+                int quantizationValue =
+                        macroblocks[blockIndex].isBackgroundLayer() ?
+                        backgroundQuantizationValue:
+                        foregroundQuantizationValue;
+
+                for (int k = 0; k < 3; k++) {
+                    quantize(dctValues[dctIndex],quantizationValue);
+                    dequantize(dctValues[dctIndex],quantizationValue);
+                    dctIndex++;
+                }
+
+            }
+        }
+
+        inverseDCT(dctValues, this.imageY, this.imageU, this.imageV);
+        return this;
     }
 
     @Override
@@ -64,9 +105,11 @@ public class Interframe extends Frame {
         }
 
         // Serialize "JPEG" Image
-        for (int i = 0; i < acValues.length; i++) {
-            os.writeInt(dcValues[i]);
-            os.write(acValues[i]);
+
+        for (int i = 0; i < dctValues.length; i++) {
+            for (int j = 0; j < 64; j++) {
+                os.writeFloat(dctValues[i][j]);
+            }
         }
     }
 

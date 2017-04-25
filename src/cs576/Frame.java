@@ -33,7 +33,7 @@ public abstract class Frame {
      */
     float[][] imageV;
 
-    protected Frame(byte[] imageBuffer,int height, int width) {
+    protected Frame(byte[] imageBuffer, int height, int width) {
         this(height,width);
 
         convertToYUV(imageBuffer, height, width, imageY, imageU, imageV);

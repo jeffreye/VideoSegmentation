@@ -13,6 +13,8 @@ import static cs576.VideoEncoder.MACROBLOCK_LENGTH;
  */
 public class Macroblock {
 
+    public static final int BACKGROUND_LAYER = 0;
+
     private int layer;
     private int x;
     private int y;
@@ -31,6 +33,10 @@ public class Macroblock {
 
     public int getLayer() {
         return layer;
+    }
+
+    public boolean isBackgroundLayer(){
+        return layer == BACKGROUND_LAYER;
     }
 
     public void setLayer(int layer) {

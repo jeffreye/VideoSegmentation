@@ -82,6 +82,17 @@ public class VideoReader {
                 offset += numRead;
             }
 
+// Test for DCT/IDCT
+//            float[][] imageY = new float[height][width];
+//            float[][] imageU = new float[height][width];
+//            float[][] imageV = new float[height][width];
+//            float[][] dctValues = new float[Utils.getDctValueSize(height,width)][64];
+//
+//            Utils.convertToYUV(bytes,height,width,imageY,imageU,imageV);
+//            Utils.forwardDCT(imageY,imageU,imageV,dctValues);
+//            Utils.inverseDCT(dctValues,imageY,imageU,imageV);
+//            bytes = Utils.convertToRGB(imageY,imageU,imageV);
+
             int ind = 0;
             for (int y = 0; y < height; y++) {
 

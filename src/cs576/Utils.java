@@ -43,6 +43,25 @@ public class Utils {
     private static final float[] DequantizationChrominanceTable =
             DCT.scaleDequantizationMatrix(ChrominanceTable);
 
+
+    private static final int[] OneTable = {
+            1, 1, 1, 1, 1, 1, 1, 1,
+            1, 1, 1, 1, 1, 1, 1, 1,
+            1, 1, 1, 1, 1, 1, 1, 1,
+            1, 1, 1, 1, 1, 1, 1, 1,
+            1, 1, 1, 1, 1, 1, 1, 1,
+            1, 1, 1, 1, 1, 1, 1, 1,
+            1, 1, 1, 1, 1, 1, 1, 1,
+            1, 1, 1, 1, 1, 1, 1, 1,
+    };
+
+
+    private static final float[] QuantizationOneTable =
+            DCT.scaleQuantizationMatrix(OneTable);
+
+    private static final float[] DequantizationOneTable =
+            DCT.scaleDequantizationMatrix(OneTable);
+
     static byte clamp(int v) {
         if (v > 255)
             return (byte) 255;
@@ -88,7 +107,9 @@ public class Utils {
         }
     }
 
-    public static void calculateDCTValues(float[][] imageY, float[][] imageU, float[][] imageV, int height, int width, byte[][] acValues, int[] dcValues) {
+
+
+    public static void forwardDCTAndQuantize(float[][] imageY, float[][] imageU, float[][] imageV, int height, int width, byte[][] acValues, int[] dcValues) {
         // Calculate DCT values
         // compute the DCT values for each blocks
         // NO zigzag order
@@ -98,19 +119,122 @@ public class Utils {
         for (int i = 0; i < height; i += DCT_BLOCK_LENGTH) {
             for (int j = 0; j < width; j += DCT_BLOCK_LENGTH) {
                 copyToTemp(height, width, true, temp, i, j, imageY);
-                dcValues[ind] = calculateDCTBlock(temp, QuantizationLuminanceTable, acValues[ind] = new byte[64]);
+                dcValues[ind] = calculateDCTBlock(temp, QuantizationLuminanceTable, acValues[ind]);
                 ind++;
 
                 copyToTemp(height, width, false, temp, i, j, imageU);
-                dcValues[ind] = calculateDCTBlock(temp, QuantizationChrominanceTable, acValues[ind] = new byte[64]);
+                dcValues[ind] = calculateDCTBlock(temp, QuantizationChrominanceTable, acValues[ind]);
                 ind++;
 
                 copyToTemp(height, width, false, temp, i, j, imageV);
-                dcValues[ind] = calculateDCTBlock(temp, QuantizationChrominanceTable, acValues[ind] = new byte[64]);
+                dcValues[ind] = calculateDCTBlock(temp, QuantizationChrominanceTable, acValues[ind]);
                 ind++;
 
             }
         }
+    }
+
+    public static void forwardDCT(float[][] imageY, float[][] imageU, float[][] imageV, float[][] dctValues) {
+        // Calculate DCT values
+        // compute the DCT values for each blocks
+        // NO zigzag order
+        int height = imageY.length;
+        int width = imageY[0].length;
+
+        int ind = 0;
+        for (int i = 0; i < height; i += DCT_BLOCK_LENGTH) {
+            for (int j = 0; j < width; j += DCT_BLOCK_LENGTH) {
+                forwardDCTBlock(imageY,i,j,true, dctValues[ind++]);
+                forwardDCTBlock(imageU,i,j,false,dctValues[ind++]);
+                forwardDCTBlock(imageV,i,j,false,dctValues[ind++]);
+            }
+        }
+    }
+
+    public static void quantize(float[] values, int quantizationStep){
+        for (int i = 0; i < values.length; i++) {
+            values[i] = round(values[i] / quantizationStep);
+        }
+    }
+
+    public static void dequantize(float[] values, int quantizationStep){
+        for (int i = 0; i < values.length; i++) {
+            values[i] *= quantizationStep;
+        }
+    }
+
+    static final  float[][] y = new float[DCT_BLOCK_LENGTH][DCT_BLOCK_LENGTH];
+    static final  float[][] u = new float[DCT_BLOCK_LENGTH][DCT_BLOCK_LENGTH];
+    static final  float[][] v = new float[DCT_BLOCK_LENGTH][DCT_BLOCK_LENGTH];
+    public static void inverseDCT(float[][] dctValues, float[][] imageY, float[][] imageU, float[][] imageV) {
+        // Calculate IDCT values
+        int height = imageY.length;
+        int width = imageY[0].length;
+
+        int ind = 0;
+        for (int i = 0; i < height; i += DCT_BLOCK_LENGTH) {
+            for (int j = 0; j < width; j += DCT_BLOCK_LENGTH) {
+
+                calculateImageBlock(dctValues[ind++], DequantizationOneTable,y);
+                calculateImageBlock(dctValues[ind++], DequantizationOneTable,u);
+                calculateImageBlock(dctValues[ind++], DequantizationOneTable,v);
+
+
+                for (int k = 0; k < DCT_BLOCK_LENGTH; k++) {
+                    for (int l = 0; l < DCT_BLOCK_LENGTH; l++) {
+                        if (i + k >= height || j + l >= width)
+                            continue;
+
+                        imageY[i + k][j + l] = y[k][l];
+                        imageU[i + k][j + l] = u[k][l];
+                        imageV[i + k][j + l] = v[k][l];
+                    }
+                }
+
+            }
+        }
+    }
+
+    static final float[][] temp = new float[DCT_BLOCK_LENGTH][DCT_BLOCK_LENGTH];
+    private static void forwardDCTBlock(float[][] image, int x, int y, boolean isLuminance,float[] output) {
+        int height = image.length;
+        int width = image[0].length;
+
+        copyToTemp(height, width, isLuminance, temp, x, y, image);
+        DCT.forwardDCT(temp);
+
+        int index = 0;
+        for (int i = 0; i < DCT_BLOCK_LENGTH; i++) {
+            for (int j = 0; j < DCT_BLOCK_LENGTH; j++) {
+                output[index] = temp[i][j] * QuantizationOneTable[index];
+                index++;
+            }
+        }
+    }
+
+    private static float[][] inverseDCTBlock(float[] dct, float[] quantizeTable) {
+        float[][] input = new float[DCT_BLOCK_LENGTH][DCT_BLOCK_LENGTH];
+        int index = 0;
+        for (int i = 0; i < DCT_BLOCK_LENGTH; i++) {
+            for (int j = 0; j < DCT_BLOCK_LENGTH; j++) {
+                input[i][j] = dct[index] * quantizeTable[index];
+                index++;
+            }
+        }
+        return DCT.inverseDCT(input);
+    }
+
+    private static float[][] calculateImageBlock(float[] dct, float[] quantizeTable,float[][] output) {
+        int index = 0;
+        for (int i = 0; i < DCT_BLOCK_LENGTH; i++) {
+            for (int j = 0; j < DCT_BLOCK_LENGTH; j++) {
+                output[i][j] =  dct[index] * quantizeTable[index];
+                index++;
+            }
+        }
+
+        DCT.inverseDCT(output);
+        return output;
     }
 
     private static void copyToTemp(int height, int width, boolean isLuminance, float[][] temp, int i, int j, float[][] image) {
@@ -145,7 +269,7 @@ public class Utils {
         return dctHeight * dctWidth * 3;
     }
 
-    public static void calculateImage(byte[][] acValues, int[] dcValues, int height, int width, float[][] imageY, float[][] imageU, float[][] imageV) {
+    public static void inverseDCTAndDequantize(byte[][] acValues, int[] dcValues, int height, int width, float[][] imageY, float[][] imageU, float[][] imageV) {
         // Calculate IDCT values
         int ind = 0;
         for (int i = 0; i < height; i += DCT_BLOCK_LENGTH) {
