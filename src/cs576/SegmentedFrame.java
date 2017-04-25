@@ -4,6 +4,9 @@ import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.FloatBuffer;
+import java.nio.IntBuffer;
+import java.nio.channels.FileChannel;
 import java.util.ArrayList;
 
 import static cs576.Utils.*;
@@ -23,15 +26,30 @@ public class SegmentedFrame extends Frame {
 
     private float[][] dctValues;
 
+    ByteBuffer byteBuffer;
+
     public SegmentedFrame(int height, int width) {
         super(height, width);
+
+        byteBuffer = ByteBuffer.allocateDirect(getDctValueSize(height, width) * 64 * 4);
     }
 
     public SegmentedFrame(byte[] imageBuffer, int height, int width) {
         super(imageBuffer, height, width);
+        setData();
 
+        byteBuffer = ByteBuffer.allocateDirect(getDctValueSize(height, width) * 64 * 4);
+    }
+
+    public SegmentedFrame setData(){
         this.dctValues = new float[getDctValueSize(height, width)][64];
         forwardDCT(imageY, imageU, imageV, dctValues);
+        return this;
+    }
+
+    public SegmentedFrame setData(byte[] imageBuffer){
+        convertToYUV(imageBuffer, height, width, imageY, imageU, imageV);
+        return setData();
     }
 
     public SegmentedFrame computeDiff(SegmentedFrame referenceFrame, int searchRange) {
@@ -47,43 +65,62 @@ public class SegmentedFrame extends Frame {
     public SegmentedFrame(int height, int width, DataInput inputStream) throws IOException {
         super(height, width);
 
-        loadFrom(inputStream);
+        //TODO:
+//        loadFrom(inputStream);
     }
 
-    public SegmentedFrame loadFrom(DataInput inputStream) throws IOException {
 
+    public boolean loadFrom(FileChannel inputStream) throws IOException {
+        byteBuffer.clear();
+        byteBuffer.limit(macroblocks.length * 4);
+        int read = inputStream.read(byteBuffer);
+        if (read == 0)
+            return false;
+        byteBuffer.flip();
+        IntBuffer layers = byteBuffer.asIntBuffer();
         for (Macroblock mc : this.macroblocks) {
-            mc.setLayer(inputStream.readInt());
+            mc.setLayer(layers.get());
         }
 
-        int size = inputStream.readInt();
+        byteBuffer.clear();
+        byteBuffer.limit(4);
+        inputStream.read(byteBuffer);
+        byteBuffer.flip();
+
+        int size = byteBuffer.getInt();
         this.motionVectors = new ArrayList<>(size);
 
+        byteBuffer.clear();
+        byteBuffer.limit(size * 3 * 4);
+        inputStream.read(byteBuffer);
+        byteBuffer.flip();
+
+        IntBuffer vectors = byteBuffer.asIntBuffer();
         for (int i = 0; i < size; i++) {
-            int index = inputStream.readInt();
+            int index = vectors.get();
             Macroblock mb = this.getBlock(index);
 
-            int x = inputStream.readInt();
-            int y = inputStream.readInt();
+            int x = vectors.get();
+            int y = vectors.get();
             mb.setMotionVector(new MotionVector(x, y));
 
             this.motionVectors.add(mb);
         }
 
 
+        byteBuffer.clear();
+        inputStream.read(byteBuffer);
+        byteBuffer.flip();
+        FloatBuffer dctBuffer = byteBuffer.asFloatBuffer();
         this.dctValues = new float[getDctValueSize(height, width)][64];
         for (int i = 0; i < dctValues.length; i++) {
-            for (int j = 0; j < 64; j++) {
-                dctValues[i][j] = inputStream.readFloat();
-            }
+            dctBuffer.get(dctValues[i]);
         }
 
-        return this;
+        return true;
     }
 
-    public SegmentedFrame reconstruct(SegmentedFrame referenceFrame, int foregroundQuantizationValue, int backgroundQuantizationValue) {
-//        this.referenceFrame = referenceFrame;
-
+    public SegmentedFrame reconstruct(int foregroundQuantizationValue, int backgroundQuantizationValue) {
 
         int blockIndex;
         int macroblockWidth = 1 + (width - 1) / MACROBLOCK_LENGTH;
@@ -134,7 +171,7 @@ public class SegmentedFrame extends Frame {
                 }
             }
 
-            if (min != 0){
+            if (min != 0) {
                 for (int i = -k; i <= k; i++) {
                     for (int j = -k; j <= k; j++) {
                         if (i == 0 && j == 0)
@@ -154,9 +191,9 @@ public class SegmentedFrame extends Frame {
                         float sum = 0;
                         for (int y = top; y <= bottom; y++) {
                             for (int x = left; x <= right; x++) {
-                                if (y - j >= height || x- i >= width)
+                                if (y - j >= height || x - i >= width)
                                     continue;
-                                sum += Math.abs(previousY[y][x] - imageY[y - j][x- i]);
+                                sum += Math.abs(previousY[y][x] - imageY[y - j][x - i]);
                             }
                         }
 
@@ -248,10 +285,9 @@ public class SegmentedFrame extends Frame {
         }
 
         // Serialize "JPEG" Image
-        ByteBuffer buffer = ByteBuffer.allocate(dctValues.length*64*4);
+        ByteBuffer buffer = ByteBuffer.allocate(dctValues.length * 64 * 4);
         for (int i = 0; i < dctValues.length; i++) {
             for (int j = 0; j < 64; j++) {
-//                os.writeFloat(dctValues[i][j]);
                 buffer.putFloat(dctValues[i][j]);
             }
         }
@@ -279,9 +315,47 @@ public class SegmentedFrame extends Frame {
         return rawImage;
     }
 
+    public void serialize(FileChannel os) throws IOException {
+        // Serialize all marcobloks' layers
+        byteBuffer.clear();
+        for (Macroblock mc : this.macroblocks) {
+            byteBuffer.putInt(mc.getLayer());
+        }
+        byteBuffer.flip();
+        os.write(byteBuffer);
+
+        // Serialize motion vectors
+        byteBuffer.clear();
+        if (motionVectors == null) {
+            byteBuffer.putInt(0);
+        } else {
+            byteBuffer.putInt(motionVectors.size());
+
+            for (Macroblock mb : motionVectors) {
+
+                byteBuffer.putInt(mb.getBlockIndex());
+
+                MotionVector v = mb.getMotionVector();
+                byteBuffer.putInt(v.x);
+                byteBuffer.putInt(v.y);
+            }
+        }
+        byteBuffer.flip();
+        os.write(byteBuffer);
+
+        // Serialize "JPEG" Image
+        byteBuffer.clear();
+        FloatBuffer dctBuffer = byteBuffer.asFloatBuffer();
+        for (int i = 0; i < dctValues.length; i++) {
+            dctBuffer.put(dctValues[i]);
+        }
+
+        byteBuffer.limit(byteBuffer.capacity());
+        os.write(byteBuffer);
+    }
 
     public void getRawImage(int[] rawImage) {
-        Utils.convertToRGB(imageY,imageU,imageV,rawImage);
+        Utils.convertToRGB(imageY, imageU, imageV, rawImage);
 
         for (Macroblock mb : macroblocks) {
             if (mb.isBackgroundLayer())

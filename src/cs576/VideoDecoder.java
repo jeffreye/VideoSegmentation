@@ -4,7 +4,10 @@ import javax.swing.*;
 import javax.swing.Timer;
 import java.awt.*;
 import java.awt.image.BufferedImage;
+import java.awt.image.Raster;
 import java.io.*;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -92,39 +95,36 @@ public class VideoDecoder {
     }
 
     public void decode() throws IOException {
-        DataInputStream inputStream = new DataInputStream(new BufferedInputStream(new FileInputStream(this.inputFile), 960*540*3*2));
-        width = inputStream.readInt();
-        height = inputStream.readInt();
-        int frameNumbers = inputStream.readInt();
+        FileInputStream inputStream = new FileInputStream(this.inputFile);
 
-        decodeSync(inputStream, frameNumbers);
+        ByteBuffer buffer = ByteBuffer.allocateDirect(3 * 4);
+        inputStream.getChannel().read(buffer);
+        buffer.flip();
+
+        width = buffer.getInt();
+        height = buffer.getInt();
+        int frameNumbers = buffer.getInt();
+
+        decodeSync(inputStream.getChannel(), frameNumbers);
 
         doneDecoding = true;
         inputStream.close();
     }
-    public void decodeSync(DataInputStream inputStream, int frameNumbers) throws IOException {
+    public void decodeSync(FileChannel inputStream, int frameNumbers) throws IOException {
         int frameCount = 0;
         int[] rawImage = new int[height*width];
 
 
 //        FileOutputStream outputStream = new FileOutputStream(outputFile);
         SegmentedFrame lastFrame = new SegmentedFrame(height,width);
-        while (inputStream.available() != 0) {
+        while (frameCount < frameNumbers) {
 
-            lastFrame = lastFrame.loadFrom(inputStream)
-                    .reconstruct(lastFrame,foregroundQuantizationValue,backgroundQuantizationValue);
-
-//            outputStream.write(lastFrame.getRawImage());
-//            outputStream.flush();
+            lastFrame.loadFrom(inputStream);
+            lastFrame = lastFrame.reconstruct(foregroundQuantizationValue,backgroundQuantizationValue);
             lastFrame.getRawImage(rawImage);
 
             BufferedImage img = new BufferedImage(width,height,BufferedImage.TYPE_INT_RGB);
-            int ind = 0;
-            for (int y = 0; y < height; y++) {
-                for (int x = 0; x < width; x++) {
-                    img.setRGB(x, y, rawImage[ind++]);
-                }
-            }
+            img.getRaster().setDataElements(0,0,width,height,rawImage);
 
             imgs.add(img);
             allImgs.add(img);
@@ -162,7 +162,7 @@ public class VideoDecoder {
             }
 
             CompletableFuture<SegmentedFrame> current = CompletableFuture.completedFuture(new SegmentedFrame(height, width, inputStream));
-            lastFrame = lastFrame.thenCombineAsync(current, (last, curr) -> curr.reconstruct(last, foregroundQuantizationValue, backgroundQuantizationValue));
+            lastFrame = lastFrame.thenCombineAsync(current, (last, curr) -> curr.reconstruct(foregroundQuantizationValue, backgroundQuantizationValue));
 
             outputFuture.thenAcceptBoth(lastFrame, (o, last) -> {
                 try {

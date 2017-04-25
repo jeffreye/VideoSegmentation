@@ -1,6 +1,8 @@
 package cs576;
 
 import java.io.*;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -22,63 +24,63 @@ public class VideoEncoder {
 
     private ConcurrentSkipListMap<Integer, Frame> frames;
 
+    private ByteBuffer bytes;
+
     public VideoEncoder(String inputFile, String outputFile, int width, int height) throws FileNotFoundException {
         this.outputFile = outputFile;
         this.inputFile = inputFile;
         this.width = width;
         this.height = height;
         frames = new ConcurrentSkipListMap<>();
+
+        bytes = ByteBuffer.allocate(height * width * 3);
     }
 
 
-    byte[] readImage(InputStream inputStream) throws IOException {
+    byte[] readImage(FileChannel inputStream) throws IOException {
 
-        byte[] bytes = new byte[width * height * 3];
-        int offset = 0;
         int numRead = 0;
-        while (offset < bytes.length && (numRead = inputStream.read(bytes, offset, bytes.length - offset)) >= 0) {
-            offset += numRead;
+        while (bytes.hasRemaining() && (numRead = inputStream.read(bytes)) >= 0) {
+
         }
-        return bytes;
+        return bytes.array();
     }
 
     public void encode() throws IOException {
 
 
-        InputStream inputStream = new FileInputStream(inputFile);
+        FileInputStream inputStream = new FileInputStream(inputFile);
         // Mark first frame as an I frame
         int frameNumbers = inputStream.available() / (3 * height * width);
 
-        final DataOutputStream outputStream =
-                new DataOutputStream(
-                        new BufferedOutputStream(
-                                new FileOutputStream(outputFile),
-                                50 * 1024 * 1024)
-                );
+        FileOutputStream outputStream = new FileOutputStream(outputFile);
 
-        outputStream.writeInt(width);
-        outputStream.writeInt(height);
 
-        outputStream.writeInt(frameNumbers);
+        ByteBuffer buffer = ByteBuffer.allocateDirect(3 * 4);
+        buffer.putInt(width);
+        buffer.putInt(height);
+        buffer.putInt(frameNumbers);
 
-        encodeSync(inputStream, outputStream, frameNumbers);
+        buffer.flip();
+        outputStream.getChannel().write(buffer);
+
+        encodeSync(inputStream.getChannel(), outputStream.getChannel(), frameNumbers);
 
         inputStream.close();
         outputStream.close();
 
     }
 
-    public void encodeSync(InputStream inputStream, DataOutputStream outputStream, int frameNumbers) throws IOException {
+    public void encodeSync(FileChannel inputStream, FileChannel outputStream, int frameNumbers) throws IOException {
         int frameCount = 0;
         SegmentedFrame prev = new SegmentedFrame(readImage(inputStream), height, width);
-        while (inputStream.available() != 0) {
+        while (frameCount < frameNumbers) {
             SegmentedFrame curr = new SegmentedFrame(readImage(inputStream), height, width)
                     .computeDiff(prev, k);
 
 
             prev.serialize(outputStream);
             frameCount++;
-            outputStream.flush();
 
             prev = curr;
 
@@ -92,12 +94,11 @@ public class VideoEncoder {
 
         prev.serialize(outputStream);
         frameCount++;
-        outputStream.flush();
 
         System.out.println("\rDONE");
     }
 
-    public void encodeAsync(InputStream inputStream, DataOutputStream outputStream, int frameNumbers) throws IOException {
+    public void encodeAsync(FileChannel inputStream, DataOutputStream outputStream, int frameNumbers) throws IOException {
         int frameCount = 0;
         CompletableFuture<SegmentedFrame> lastFrame =
                 CompletableFuture.completedFuture(readImage(inputStream))
@@ -106,7 +107,7 @@ public class VideoEncoder {
         CompletableFuture<Void> outputFuture = CompletableFuture.completedFuture(null);
         AtomicInteger processedInteger = new AtomicInteger(0);
 
-        while (inputStream.available() != 0) {
+        while (frameCount < frameNumbers) {
 
             if (frameCount % BATCH_WORKS == 0 && frameCount != 0) {
                 while (!lastFrame.isDone()) {
