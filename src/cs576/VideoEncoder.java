@@ -40,6 +40,7 @@ public class VideoEncoder {
     byte[] readImage(FileChannel inputStream) throws IOException {
 
         int numRead = 0;
+        bytes.clear();
         while (bytes.hasRemaining() && (numRead = inputStream.read(bytes)) >= 0) {
 
         }
