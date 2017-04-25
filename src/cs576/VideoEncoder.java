@@ -16,7 +16,7 @@ public class VideoEncoder {
     private String outputFile;
     private int width;
     private int height;
-    private static final int k = 16;
+    private static final int k =10;
 
     private static final int BATCH_WORKS = 20;
 

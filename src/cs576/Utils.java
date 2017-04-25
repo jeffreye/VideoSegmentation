@@ -70,6 +70,26 @@ public class Utils {
         return (byte) v;
     }
 
+    public static void convertToRGB(float[][] imageY, float[][] imageU, float[][] imageV,int[] rawImage) {
+        int height = imageY.length;
+        int width = imageY[0].length;
+
+        for (int k = 0; k < height; k++) {
+            for (int l = 0; l < width; l++) {
+
+                float _y = imageY[k][l];
+                float _u = imageU[k][l];
+                float _v = imageV[k][l];
+
+                int pixelIndex = k * width + l;
+                int r = clamp(round(_y + 1.402f * (_v - 128f)));
+                int g = clamp(round(_y - 0.344136f * (_u - 128f) - 0.714136f * (_v - 128f)));
+                int b = clamp(round(_y + 1.772f * (_u - 128f)));
+                rawImage[pixelIndex] =  0xff000000 | ((r & 0xff) << 16) | ((g & 0xff) << 8) | (b & 0xff);
+            }
+        }
+    }
+
     public static byte[] convertToRGB(float[][] imageY, float[][] imageU, float[][] imageV) {
         int height = imageY.length;
         int width = imageY[0].length;

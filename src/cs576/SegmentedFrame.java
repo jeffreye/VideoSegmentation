@@ -23,6 +23,10 @@ public class SegmentedFrame extends Frame {
 
     private float[][] dctValues;
 
+    public SegmentedFrame(int height, int width) {
+        super(height, width);
+    }
+
     public SegmentedFrame(byte[] imageBuffer, int height, int width) {
         super(imageBuffer, height, width);
 
@@ -42,6 +46,11 @@ public class SegmentedFrame extends Frame {
 
     public SegmentedFrame(int height, int width, DataInput inputStream) throws IOException {
         super(height, width);
+
+        loadFrom(inputStream);
+    }
+
+    public SegmentedFrame loadFrom(DataInput inputStream) throws IOException {
 
         for (Macroblock mc : this.macroblocks) {
             mc.setLayer(inputStream.readInt());
@@ -68,6 +77,8 @@ public class SegmentedFrame extends Frame {
                 dctValues[i][j] = inputStream.readFloat();
             }
         }
+
+        return this;
     }
 
     public SegmentedFrame reconstruct(SegmentedFrame referenceFrame, int foregroundQuantizationValue, int backgroundQuantizationValue) {
@@ -180,7 +191,7 @@ public class SegmentedFrame extends Frame {
          The consistency of the motion vector direction gives you an indication
          that all the macroblocks probably belong to the same object and are moving in a certain direction
          */
-        double tolerantRate = 10;
+        double tolerantRate = 5;
 
         int macroblockWidth = 1 + (width - 1) / MACROBLOCK_LENGTH;
         int totalX = 0;
@@ -266,5 +277,24 @@ public class SegmentedFrame extends Frame {
         }
 
         return rawImage;
+    }
+
+
+    public void getRawImage(int[] rawImage) {
+        Utils.convertToRGB(imageY,imageU,imageV,rawImage);
+
+        for (Macroblock mb : macroblocks) {
+            if (mb.isBackgroundLayer())
+                continue;
+
+            // Mark by green
+            int x = mb.getX();
+            int y = mb.getY();
+            for (int i = 0; i < MACROBLOCK_LENGTH; i++) {
+                for (int j = 0; j < MACROBLOCK_LENGTH; j++) {
+                    rawImage[(y + i) * width + (x + j)] |= (0xff << 8);
+                }
+            }
+        }
     }
 }
