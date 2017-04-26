@@ -270,6 +270,7 @@ public class SegmentedFrame extends Frame {
 
 
         //hard way
+        final double bgMinRadius=3;
         double tolerantRate=1;
         boolean recalculate=true;
 
@@ -310,6 +311,9 @@ public class SegmentedFrame extends Frame {
                     fgCount++;
                 }
             }
+            fgLayerCentroidX=fgTotalX/fgCount;
+            fgLayerCentroidY=fgTotalY/fgCount;
+
             if(bgCount==0){
                 recalculate=true;
                 tolerantRate=tolerantRate*2;
@@ -322,32 +326,14 @@ public class SegmentedFrame extends Frame {
             }
         }
 
-        bgLayerCentroidX=bgTotalX/bgCount;
-        bgLayerCentroidY=bgTotalY/bgCount;
-        fgTotalX=0;
-        fgTotalY=0;
-        fgCount=0;
-        for (Macroblock eachBlock : motionVectors) {
-            if(eachBlock.getMotionVector().getDistance(bgLayerCentroidX,bgLayerCentroidY) < tolerantRate){
-                eachBlock.setLayer(Macroblock.BACKGROUND_LAYER);
-            }
-            else{
-                eachBlock.setLayer(1);
-                fgTotalX+=eachBlock.getMotionVector().x;
-                fgTotalY+=eachBlock.getMotionVector().y;
-                fgCount++;
-            }
-        }
-        fgLayerCentroidX=fgTotalX/fgCount;
-        fgLayerCentroidY=fgTotalY/fgCount;
-
         //clustering
         boolean changed=true;
         while (changed){
             changed=false;
             for (Macroblock eachBlock : motionVectors) {
                 int previousLayer=eachBlock.getLayer();
-                if(eachBlock.getMotionVector().getDistance(bgLayerCentroidX,bgLayerCentroidY) < eachBlock.getMotionVector().getDistance(fgLayerCentroidX,fgLayerCentroidY)){
+                if(eachBlock.getMotionVector().getDistance(fgLayerCentroidX,fgLayerCentroidY)-eachBlock.getMotionVector().getDistance(bgLayerCentroidX,bgLayerCentroidY) >0
+                        || eachBlock.getMotionVector().getDistance(bgLayerCentroidX,bgLayerCentroidY) < bgMinRadius){
                     eachBlock.setLayer(Macroblock.BACKGROUND_LAYER);
                 }
                 else{
