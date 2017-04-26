@@ -354,10 +354,10 @@ public class SegmentedFrame extends Frame {
                     eachBlock.setLayer(1);
                 }
                 if(previousLayer != eachBlock.getLayer()){
-                    changed=false;
+                    changed=true;
                 }
             }
-            if (changed){
+            if (changed){//calculate new centroids
                 bgTotalX=0;
                 bgTotalY=0;
                 bgCount=0;
