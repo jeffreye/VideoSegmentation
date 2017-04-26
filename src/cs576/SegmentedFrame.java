@@ -268,13 +268,23 @@ public class SegmentedFrame extends Frame {
 //            }
 //        }
 
-        
+
         //hard way
         double tolerantRate=1;
         boolean recalculate=true;
+
         double bgTotalX=0;
         double bgTotalY=0;
         int bgCount=0;
+        double bgLayerCentroidX=0;
+        double bgLayerCentroidY=0;
+
+        double fgTotalX=0;
+        double fgTotalY=0;
+        int fgCount=0;
+        double fgLayerCentroidX=0;
+        double fgLayerCentroidY=0;
+
         while (recalculate){
             recalculate=false;
             for (Macroblock eachBlock : motionVectors) {
@@ -284,20 +294,39 @@ public class SegmentedFrame extends Frame {
                     bgCount++;
                 }
             }
+            bgLayerCentroidX=bgTotalX/bgCount;
+            bgLayerCentroidY=bgTotalY/bgCount;
+
+            bgCount=0;
+            for (Macroblock eachBlock : motionVectors) {
+                if(eachBlock.getMotionVector().getDistance(bgLayerCentroidX,bgLayerCentroidY) < tolerantRate){
+                    eachBlock.setLayer(Macroblock.BACKGROUND_LAYER);
+                    bgCount++;
+                }
+                else{
+                    eachBlock.setLayer(1);
+                    fgTotalX+=eachBlock.getMotionVector().x;
+                    fgTotalY+=eachBlock.getMotionVector().y;
+                    fgCount++;
+                }
+            }
             if(bgCount==0){
                 recalculate=true;
                 tolerantRate=tolerantRate*2;
                 bgTotalX=0;
                 bgTotalY=0;
                 bgCount=0;
+                fgTotalX=0;
+                fgTotalY=0;
+                fgCount=0;
             }
         }
 
-        double bgLayerCentroidX=bgTotalX/bgCount;
-        double bgLayerCentroidY=bgTotalY/bgCount;
-        double fgTotalX=0;
-        double fgTotalY=0;
-        int fgCount=0;
+        bgLayerCentroidX=bgTotalX/bgCount;
+        bgLayerCentroidY=bgTotalY/bgCount;
+        fgTotalX=0;
+        fgTotalY=0;
+        fgCount=0;
         for (Macroblock eachBlock : motionVectors) {
             if(eachBlock.getMotionVector().getDistance(bgLayerCentroidX,bgLayerCentroidY) < tolerantRate){
                 eachBlock.setLayer(Macroblock.BACKGROUND_LAYER);
@@ -309,8 +338,8 @@ public class SegmentedFrame extends Frame {
                 fgCount++;
             }
         }
-        double fgLayerCentroidX=fgTotalX/fgCount;
-        double fgLayerCentroidY=fgTotalY/fgCount;
+        fgLayerCentroidX=fgTotalX/fgCount;
+        fgLayerCentroidY=fgTotalY/fgCount;
 
         //clustering
         boolean changed=true;
