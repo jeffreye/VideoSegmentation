@@ -228,31 +228,129 @@ public class SegmentedFrame extends Frame {
          The consistency of the motion vector direction gives you an indication
          that all the macroblocks probably belong to the same object and are moving in a certain direction
          */
-        double tolerantRate = 5;
+//        double tolerantRate = 5;
+//
+//        int macroblockWidth = 1 + (width - 1) / MACROBLOCK_LENGTH;
+//        for (Macroblock eachBlock : motionVectors) {
+//            int layerIndex = Macroblock.BACKGROUND_LAYER;
+//            if (eachBlock.getMotionVector().magnitude() >= tolerantRate) {
+//                layerIndex = 1;
+//            }
+//
+//            if (referenceFrame.referenceFrame == null && layerIndex != Macroblock.BACKGROUND_LAYER) {
+//                // assign layer values
+//                int x = eachBlock.getX() + eachBlock.getMotionVector().x;
+//                int y = eachBlock.getY() + eachBlock.getMotionVector().y;
+//
+//                int blockIndex = y / MACROBLOCK_LENGTH * macroblockWidth + x / MACROBLOCK_LENGTH;
+//                Macroblock mb = referenceFrame.getBlock(blockIndex);
+//                mb.setLayer(layerIndex);
+//            }
+//        }
 
-        int macroblockWidth = 1 + (width - 1) / MACROBLOCK_LENGTH;
-        int totalX = 0;
-        int totalY = 0;
-        int count = 0;
-        for (Macroblock eachBlock : motionVectors) {
-            totalX += eachBlock.getMotionVector().x;
-            totalY += eachBlock.getMotionVector().y;
-            count++;
-        }
-        for (Macroblock eachBlock : motionVectors) {
-            int layerIndex = Macroblock.BACKGROUND_LAYER;
-            if (eachBlock.getMotionVector().magnitude() >= tolerantRate) {
-                layerIndex = 1;
+
+//        //easy way
+//        double tolerantRate=3;
+//        double totalX=0;
+//        double totalY=0;
+//        int count=0;
+//        for (Macroblock eachBlock : motionVectors) {
+//            totalX+=eachBlock.getMotionVector().x;
+//            totalY+=eachBlock.getMotionVector().y;
+//            count++;
+//        }
+//        for (Macroblock eachBlock : motionVectors) {
+//            if(eachBlock.getMotionVector().getDistance(totalX*1.0/count,totalY*1.0/count) < tolerantRate){
+//                eachBlock.setLayer(0);
+//            }
+//            else{
+//                eachBlock.setLayer(1);
+//            }
+//        }
+
+        
+        //hard way
+        double tolerantRate=1;
+        boolean recalculate=true;
+        double bgTotalX=0;
+        double bgTotalY=0;
+        int bgCount=0;
+        while (recalculate){
+            recalculate=false;
+            for (Macroblock eachBlock : motionVectors) {
+                if( eachBlock.getX()<18 || eachBlock.getX()> (height-26) || eachBlock.getX()<18 || eachBlock.getX()> (width-26) ) {
+                    bgTotalX += eachBlock.getMotionVector().x;
+                    bgTotalY += eachBlock.getMotionVector().y;
+                    bgCount++;
+                }
             }
+            if(bgCount==0){
+                recalculate=true;
+                tolerantRate=tolerantRate*2;
+                bgTotalX=0;
+                bgTotalY=0;
+                bgCount=0;
+            }
+        }
 
-            if (referenceFrame.referenceFrame == null && layerIndex != Macroblock.BACKGROUND_LAYER) {
-                // assign layer values
-                int x = eachBlock.getX() + eachBlock.getMotionVector().x;
-                int y = eachBlock.getY() + eachBlock.getMotionVector().y;
+        double bgLayerCentroidX=bgTotalX/bgCount;
+        double bgLayerCentroidY=bgTotalY/bgCount;
+        double fgTotalX=0;
+        double fgTotalY=0;
+        int fgCount=0;
+        for (Macroblock eachBlock : motionVectors) {
+            if(eachBlock.getMotionVector().getDistance(bgLayerCentroidX,bgLayerCentroidY) < tolerantRate){
+                eachBlock.setLayer(Macroblock.BACKGROUND_LAYER);
+            }
+            else{
+                eachBlock.setLayer(1);
+                fgTotalX+=eachBlock.getMotionVector().x;
+                fgTotalY+=eachBlock.getMotionVector().y;
+                fgCount++;
+            }
+        }
+        double fgLayerCentroidX=fgTotalX/fgCount;
+        double fgLayerCentroidY=fgTotalY/fgCount;
 
-                int blockIndex = y / MACROBLOCK_LENGTH * macroblockWidth + x / MACROBLOCK_LENGTH;
-                Macroblock mb = referenceFrame.getBlock(blockIndex);
-                mb.setLayer(layerIndex);
+        //clustering
+        boolean changed=true;
+        while (changed){
+            changed=false;
+            for (Macroblock eachBlock : motionVectors) {
+                int previousLayer=eachBlock.getLayer();
+                if(eachBlock.getMotionVector().getDistance(bgLayerCentroidX,bgLayerCentroidY) < eachBlock.getMotionVector().getDistance(fgLayerCentroidX,fgLayerCentroidY)){
+                    eachBlock.setLayer(Macroblock.BACKGROUND_LAYER);
+                }
+                else{
+                    eachBlock.setLayer(1);
+                }
+                if(previousLayer != eachBlock.getLayer()){
+                    changed=false;
+                }
+            }
+            if (changed){
+                bgTotalX=0;
+                bgTotalY=0;
+                bgCount=0;
+                fgTotalX=0;
+                fgTotalY=0;
+                fgCount=0;
+                for (Macroblock eachBlock : motionVectors) {
+                    if(eachBlock.getLayer()==Macroblock.BACKGROUND_LAYER){
+                        bgTotalX+=eachBlock.getMotionVector().x;
+                        bgTotalY+=eachBlock.getMotionVector().y;
+                        bgCount++;
+                    }
+                    else{
+                        fgTotalX+=eachBlock.getMotionVector().x;
+                        fgTotalY+=eachBlock.getMotionVector().y;
+                        fgCount++;
+                    }
+                }
+                bgLayerCentroidX=bgTotalX/bgCount;
+                bgLayerCentroidY=bgTotalY/bgCount;
+                fgLayerCentroidX=fgTotalX/fgCount;
+                fgLayerCentroidY=fgTotalY/fgCount;
             }
         }
     }
@@ -357,18 +455,18 @@ public class SegmentedFrame extends Frame {
     public void getRawImage(int[] rawImage) {
         Utils.convertToRGB(imageY, imageU, imageV, rawImage);
 
-        for (Macroblock mb : macroblocks) {
-            if (mb.isBackgroundLayer())
-                continue;
-
-            // Mark by green
-            int x = mb.getX();
-            int y = mb.getY();
-            for (int i = 0; i < MACROBLOCK_LENGTH; i++) {
-                for (int j = 0; j < MACROBLOCK_LENGTH; j++) {
-                    rawImage[(y + i) * width + (x + j)] |= (0xff << 8);
-                }
-            }
-        }
+//        for (Macroblock mb : macroblocks) {
+//            if (mb.isBackgroundLayer())
+//                continue;
+//
+//            // Mark by green
+//            int x = mb.getX();
+//            int y = mb.getY();
+//            for (int i = 0; i < MACROBLOCK_LENGTH; i++) {
+//                for (int j = 0; j < MACROBLOCK_LENGTH; j++) {
+//                    rawImage[(y + i) * width + (x + j)] |= (0xff << 8);
+//                }
+//            }
+//        }
     }
 }
