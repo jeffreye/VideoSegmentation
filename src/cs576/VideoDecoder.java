@@ -10,11 +10,15 @@ import java.util.ArrayDeque;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import java.awt.event.MouseListener;
+import java.awt.event.MouseEvent;
 
 /**
  * Created by Jeffreye on 4/1/2017.
  */
-public class VideoDecoder {
+public class VideoDecoder implements ActionListener,MouseListener{
 
     private static final int BATCH_WORKS = 20;
     private final String inputFile;
@@ -23,12 +27,13 @@ public class VideoDecoder {
     private final int backgroundQuantizationValue;
     private int width;
     private int height;
-
+    private int videostatus;
 
     private BufferedImage image;
     private JFrame frame;
     private JLabel lbIm1;
     private JLabel lbText1;
+    private JButton playpause;
     private Queue<int[]> imgs;
     private Queue<int[]> imageBuffers;
     private Timer timer;
@@ -42,7 +47,7 @@ public class VideoDecoder {
         this.outputFile = outputFile;
         this.foregroundQuantizationValue = foregroundQuantizationValue;
         this.backgroundQuantizationValue = backgroundQuantizationValue;
-
+        this.videostatus = 1;
 
         imgs = new ArrayDeque<>(10);
 //        allImgs = new ArrayList<>(100);
@@ -51,6 +56,7 @@ public class VideoDecoder {
         showWindow(fps);
     }
 
+
     public void showWindow(int fps) {
         frame = new JFrame();
         GridBagLayout gLayout = new GridBagLayout();
@@ -58,7 +64,7 @@ public class VideoDecoder {
         String result = String.format("Video height: %d, width: %d", height, width);
         lbText1 = new JLabel(result);
         lbText1.setHorizontalAlignment(SwingConstants.CENTER);
-
+        frame.addMouseListener(this);
         lbIm1 = new JLabel();
 
         GridBagConstraints c = new GridBagConstraints();
@@ -71,9 +77,20 @@ public class VideoDecoder {
 
 
         c.fill = GridBagConstraints.HORIZONTAL;
+        c.anchor = GridBagConstraints.CENTER;
         c.gridx = 0;
         c.gridy = 1;
         frame.getContentPane().add(lbIm1, c);
+
+        playpause = new JButton("Play/Pause");
+        playpause.addActionListener(this);
+
+        c.fill = GridBagConstraints.HORIZONTAL;
+        c.anchor = GridBagConstraints.CENTER;
+        c.gridx = 0;
+        c.gridy = 2;
+        frame.getContentPane().add(playpause, c);
+
 
         frame.setTitle("Video Player");
         frame.pack();
@@ -86,6 +103,7 @@ public class VideoDecoder {
         timer.setInitialDelay(0);
         timer.start();
     }
+
 
     private void refreshImage() {
 
@@ -203,6 +221,50 @@ public class VideoDecoder {
 
         outputFuture.join();
         outputStream.close();
+    }
+
+    /*=============================================================================
+    * ============================= Action Listeners ==============================
+    * =============================================================================
+    */
+
+    public void playOrPauseVideo() {
+        if(videostatus==1) {
+            timer.stop();
+            videostatus = 0;
+        }
+        else {
+            timer.start();
+            videostatus = 1;
+        }
+    }
+
+
+    public void actionPerformed (ActionEvent e) {
+        Object src = e.getSource();
+        if (src == playpause) {
+            playOrPauseVideo();
+        }
+    }
+
+    public void mousePressed(MouseEvent e) {
+        System.out.println("Mouse pressed " + e.getPoint().toString());
+    }
+
+    public void mouseEntered(MouseEvent e) {
+        return;
+    }
+
+    public void mouseExited(MouseEvent e) {
+        return;
+    }
+
+    public void mouseReleased(MouseEvent e) {
+        return;
+    }
+
+    public void mouseClicked(MouseEvent e) {
+        return;
     }
 
 
