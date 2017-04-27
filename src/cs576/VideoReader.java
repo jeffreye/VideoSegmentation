@@ -3,7 +3,10 @@ package cs576;
 import javax.swing.*;
 import java.awt.*;
 import java.awt.image.BufferedImage;
-import java.io.*;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 
@@ -21,12 +24,26 @@ public class VideoReader {
     int height;
 
     ByteBuffer bytes;
+    int[] rawImage;
+
+    float[][] imageY;
+    float[][] imageU;
+    float[][] imageV;
+    float[][] dctValues;
 
     public VideoReader(String filename, int width, int height, int fps) throws FileNotFoundException {
         this.width = width;
         this.height = height;
 
         bytes = ByteBuffer.allocate(width * height * 3);
+        rawImage = new int[height * width];
+
+
+        // Test for DCT/IDCT
+        imageY = new float[height][width];
+        imageU = new float[height][width];
+        imageV = new float[height][width];
+        dctValues = new float[Utils.getDctValueSize(height, width)][64];
 
         file = new File(filename);
         is = new FileInputStream(file).getChannel();
@@ -37,7 +54,7 @@ public class VideoReader {
 
     }
 
-    public void start(){
+    public void start() {
         frame = new JFrame();
         GridBagLayout gLayout = new GridBagLayout();
         frame.getContentPane().setLayout(gLayout);
@@ -71,6 +88,7 @@ public class VideoReader {
 
 
     void readImage() {
+        final long startTime = System.nanoTime();
         try {
             if (is.position() == is.size()) {
                 is.position(0);
@@ -81,29 +99,29 @@ public class VideoReader {
             while (bytes.hasRemaining() && is.read(bytes) >= 0) {
             }
 
-            // Test for DCT/IDCT
-            float[][] imageY = new float[height][width];
-            float[][] imageU = new float[height][width];
-            float[][] imageV = new float[height][width];
-            float[][] dctValues = new float[Utils.getDctValueSize(height,width)][64];
-
-            Utils.convertToYUV(bytes.array(),height,width,imageY,imageU,imageV);
-            Utils.forwardDCT(imageY,imageU,imageV,dctValues);
+            Utils.convertToYUV(bytes.array(), height, width, imageY, imageU, imageV);
+            Utils.forwardDCT(imageY, imageU, imageV, dctValues);
             for (int i = 0; i < dctValues.length; i++) {
-                Utils.quantize(dctValues[i],1);
-                Utils.dequantize(dctValues[i],1);
+                Utils.quantize(dctValues[i], 1);
+                Utils.dequantize(dctValues[i], 1);
             }
-            Utils.inverseDCT(dctValues,imageY,imageU,imageV);
-            int[] rawImage = new int[height*width];
-            Utils.convertToRGB(imageY,imageU,imageV,rawImage);
+            Utils.inverseDCT(dctValues, imageY, imageU, imageV);
+            Utils.convertToRGB(imageY, imageU, imageV, rawImage);
 
-            img.getRaster().setDataElements(0,0,width,height,rawImage);
+            img.getRaster().setDataElements(0, 0, width, height, rawImage);
 
             // Use labels to display the images
-            lbIm1.setIcon(new ImageIcon(img));
+//            lbIm1.setIcon(new ImageIcon(img));
+            lbIm1.repaint();
 
         } catch (IOException e) {
             e.printStackTrace();
+        } finally {
+            // End timer
+            final long endTime = System.nanoTime();
+
+            System.out.printf("\rTime elapsed: %f ms\n",
+                    (float) (endTime - startTime) / 1e6);
         }
 
     }

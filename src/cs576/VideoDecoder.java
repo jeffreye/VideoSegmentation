@@ -1,14 +1,13 @@
 package cs576;
 
 import javax.swing.*;
-import javax.swing.Timer;
 import java.awt.*;
 import java.awt.image.BufferedImage;
-import java.awt.image.Raster;
 import java.io.*;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
-import java.util.*;
+import java.util.ArrayDeque;
+import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -26,15 +25,19 @@ public class VideoDecoder {
     private int height;
 
 
+    private BufferedImage image;
     private JFrame frame;
     private JLabel lbIm1;
-    private Queue<BufferedImage> imgs;
-    private ArrayList<BufferedImage> allImgs;
+    private JLabel lbText1;
+    private Queue<int[]> imgs;
+    private Queue<int[]> imageBuffers;
     private Timer timer;
+
+//    int[] rawImage;
 
     private boolean doneDecoding;
 
-    public VideoDecoder(String inputFile, String outputFile, int foregroundQuantizationValue, int backgroundQuantizationValue,int fps) throws FileNotFoundException {
+    public VideoDecoder(String inputFile, String outputFile, int foregroundQuantizationValue, int backgroundQuantizationValue, int fps) throws FileNotFoundException {
         this.inputFile = inputFile;
         this.outputFile = outputFile;
         this.foregroundQuantizationValue = foregroundQuantizationValue;
@@ -42,20 +45,21 @@ public class VideoDecoder {
 
 
         imgs = new ArrayDeque<>(10);
-        allImgs = new ArrayList<>(100);
+//        allImgs = new ArrayList<>(100);
+        imageBuffers = new ArrayDeque<>(10);
 //        img = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
         showWindow(fps);
     }
 
-    public void showWindow(int fps){
+    public void showWindow(int fps) {
         frame = new JFrame();
         GridBagLayout gLayout = new GridBagLayout();
         frame.getContentPane().setLayout(gLayout);
         String result = String.format("Video height: %d, width: %d", height, width);
-        JLabel lbText1 = new JLabel(result);
+        lbText1 = new JLabel(result);
         lbText1.setHorizontalAlignment(SwingConstants.CENTER);
 
-        lbIm1 = new JLabel(new ImageIcon(new BufferedImage(1,1,BufferedImage.TYPE_INT_RGB)));
+        lbIm1 = new JLabel();
 
         GridBagConstraints c = new GridBagConstraints();
         c.fill = GridBagConstraints.HORIZONTAL;
@@ -83,15 +87,16 @@ public class VideoDecoder {
         timer.start();
     }
 
-    private void refreshImage(){
+    private void refreshImage() {
 
         if (imgs.size() == 0)
-            if(doneDecoding)
-                imgs.addAll(allImgs);
-            else
-                return;
+            return;
 
-        lbIm1.setIcon(new ImageIcon(imgs.remove()));
+        int[] buffer = imgs.remove();
+        imageBuffers.add(buffer);
+
+        image.getRaster().setDataElements(0, 0, width, height, buffer);
+        lbIm1.repaint();
     }
 
     public void decode() throws IOException {
@@ -105,36 +110,55 @@ public class VideoDecoder {
         height = buffer.getInt();
         int frameNumbers = buffer.getInt();
 
+        String result = String.format("Video height: %d, width: %d", height, width);
+        lbText1.setText(result);
+
+        image = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+        lbIm1.setIcon(new ImageIcon(image));
+        frame.pack();
+
+        for (int i = 0; i < 10; i++) {
+            imageBuffers.add(new int[height * width]);
+        }
+
         decodeSync(inputStream.getChannel(), frameNumbers);
 
         doneDecoding = true;
         inputStream.close();
     }
+
     public void decodeSync(FileChannel inputStream, int frameNumbers) throws IOException {
-        int frameCount = 0;
-        int[] rawImage = new int[height*width];
+        SegmentedFrame lastFrame = new SegmentedFrame(height, width);
+        while (true) {
+            // Reset to first frame
+            if (inputStream.size() == inputStream.position())
+                inputStream.position(4 * 3);
 
+            // Stop buffering
+            if (imageBuffers.size() == 0)
+                try {
+                    Thread.sleep(200);
+                    continue;
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
 
-//        FileOutputStream outputStream = new FileOutputStream(outputFile);
-        SegmentedFrame lastFrame = new SegmentedFrame(height,width);
-        while (frameCount < frameNumbers) {
+//            final long startTime = System.nanoTime();
+
+            int[] rawImage = imageBuffers.remove();
 
             lastFrame.loadFrom(inputStream);
-            lastFrame = lastFrame.reconstruct(foregroundQuantizationValue,backgroundQuantizationValue);
+            lastFrame = lastFrame.reconstruct(foregroundQuantizationValue, backgroundQuantizationValue);
             lastFrame.getRawImage(rawImage);
 
-            BufferedImage img = new BufferedImage(width,height,BufferedImage.TYPE_INT_RGB);
-            img.getRaster().setDataElements(0,0,width,height,rawImage);
+            imgs.add(rawImage);
 
-            imgs.add(img);
-            allImgs.add(img);
-
-            frameCount++;
-
-            System.out.print("\r");
-            System.out.print("Frame " + Integer.toString(frameCount) + "/" + Integer.toString(frameNumbers) + " Processed.");
+            // End timer
+//            final long endTime = System.nanoTime();
+//
+//            System.out.printf("\rTime elapsed: %f ms\n",
+//                    (float) (endTime - startTime) / 1e6);
         }
-        System.out.println("\rDONE");
     }
 
     public void decodeAsync(DataInputStream inputStream, int frameNumbers) throws IOException {
@@ -189,7 +213,7 @@ public class VideoDecoder {
                 String output = input.substring(0, input.length() - 4).concat(".raw");
                 int quantizationForeground = Integer.parseInt(argv[1]);
                 int quantizationBackground = Integer.parseInt(argv[2]);
-                VideoDecoder decoder = new VideoDecoder(input, output, quantizationForeground, quantizationBackground,30);
+                VideoDecoder decoder = new VideoDecoder(input, output, quantizationForeground, quantizationBackground, 30);
                 decoder.decode();
             } catch (Exception e) {
                 e.printStackTrace(System.err);
