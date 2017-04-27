@@ -4,6 +4,8 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.*;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 
 
 public class VideoReader {
@@ -14,20 +16,20 @@ public class VideoReader {
     Timer timer;
 
     File file;
-    InputStream is;
+    FileChannel is;
     int width;
     int height;
 
-    byte[] bytes;
+    ByteBuffer bytes;
 
     public VideoReader(String filename, int width, int height, int fps) throws FileNotFoundException {
         this.width = width;
         this.height = height;
 
-        bytes = new byte[width * height * 3];
+        bytes = ByteBuffer.allocate(width * height * 3);
 
         file = new File(filename);
-        is = new FileInputStream(file);
+        is = new FileInputStream(file).getChannel();
         img = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
 
         timer = new Timer(1000 / fps, e -> readImage());
@@ -70,48 +72,32 @@ public class VideoReader {
 
     void readImage() {
         try {
-            if (is.available() == 0) {
-                is.close();
-                is = new BufferedInputStream(new FileInputStream(file),960*540*3*30);
+            if (is.position() == is.size()) {
+                is.position(0);
             }
 
 
-            int offset = 0;
-            int numRead = 0;
-            while (offset < bytes.length && (numRead = is.read(bytes, offset, bytes.length - offset)) >= 0) {
-                offset += numRead;
+            bytes.clear();
+            while (bytes.hasRemaining() && is.read(bytes) >= 0) {
             }
 
-// Test for DCT/IDCT
-//            float[][] imageY = new float[height][width];
-//            float[][] imageU = new float[height][width];
-//            float[][] imageV = new float[height][width];
-//            float[][] dctValues = new float[Utils.getDctValueSize(height,width)][64];
-//
-//            Utils.convertToYUV(bytes,height,width,imageY,imageU,imageV);
-//            Utils.forwardDCT(imageY,imageU,imageV,dctValues);
-//            for (int i = 0; i < dctValues.length; i++) {
-//                Utils.quantize(dctValues[i],1);
-//                Utils.dequantize(dctValues[i],1);
-//            }
-//            Utils.inverseDCT(dctValues,imageY,imageU,imageV);
-//            bytes = Utils.convertToRGB(imageY,imageU,imageV);
+            // Test for DCT/IDCT
+            float[][] imageY = new float[height][width];
+            float[][] imageU = new float[height][width];
+            float[][] imageV = new float[height][width];
+            float[][] dctValues = new float[Utils.getDctValueSize(height,width)][64];
 
-            int ind = 0;
-            for (int y = 0; y < height; y++) {
-
-                for (int x = 0; x < width; x++) {
-
-                    byte a = 0;
-                    byte r = bytes[ind];
-                    byte g = bytes[ind + height * width];
-                    byte b = bytes[ind + height * width * 2];
-
-                    int pix = 0xff000000 | ((r & 0xff) << 16) | ((g & 0xff) << 8) | (b & 0xff);
-                    img.setRGB(x, y, pix);
-                    ind++;
-                }
+            Utils.convertToYUV(bytes.array(),height,width,imageY,imageU,imageV);
+            Utils.forwardDCT(imageY,imageU,imageV,dctValues);
+            for (int i = 0; i < dctValues.length; i++) {
+                Utils.quantize(dctValues[i],1);
+                Utils.dequantize(dctValues[i],1);
             }
+            Utils.inverseDCT(dctValues,imageY,imageU,imageV);
+            int[] rawImage = new int[height*width];
+            Utils.convertToRGB(imageY,imageU,imageV,rawImage);
+
+            img.getRaster().setDataElements(0,0,width,height,rawImage);
 
             // Use labels to display the images
             lbIm1.setIcon(new ImageIcon(img));

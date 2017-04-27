@@ -1,374 +1,343 @@
 /*
- *  Licensed under the Apache License, Version 2.0 (the "License");
- *  you may not use this file except in compliance with the License.
- *  You may obtain a copy of the License at
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- *  Unless required by applicable law or agreed to in writing, software
- *  distributed under the License is distributed on an "AS IS" BASIS,
- *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *  See the License for the specific language governing permissions and
- *  limitations under the License.
- *  under the License.
+ * Copyright (C) 1994-1998, Thomas G. Lane.
+ * This file is part of the Independent JPEG Group's software.
+ * For conditions of distribution and use, see the accompanying README file of libjpeg.
  */
 
 /* Modification Copyright 2017 by Jeffrey Ye */
 
 package cs576;
 
+import java.util.Arrays;
+
 public class DCT {
-    /*
-     * The book "JPEG still image data compression standard", by Pennebaker and
-     * Mitchell, Chapter 4, discusses a number of approaches to the fast DCT.
-     * Here's the cost, exluding modified (de)quantization, for transforming an
-     * 8x8 block:
-     *
-     * Algorithm Adds Multiplies RightShifts Total Naive 896 1024 0 1920
-     * "Symmetries" 448 224 0 672 Vetterli and 464 208 0 672 Ligtenberg Arai,
-     * Agui and 464 80 0 544 Nakajima (AA&N) Feig 8x8 462 54 6 522 Fused mul/add
-     * 416 (a pipe dream)
-     *
-     * IJG's libjpeg, FFmpeg, and a number of others use AA&N.
-     *
-     * It would appear that Feig does 4-5% less operations, and multiplications
-     * are reduced from 80 in AA&N to only 54. But in practice:
-     *
-     * Benchmarks, Intel Core i3 @ 2.93 GHz in long mode, 4 GB RAM Time taken to
-     * do 100 million IDCTs (less is better): Rene' Stckel's Feig, int: 45.07
-     * seconds My Feig, floating point: 36.252 seconds AA&N, unrolled loops,
-     * double[][] -> double[][]: 25.167 seconds
-     *
-     * Clearly Feig is hopeless. I suspect the performance killer is simply the
-     * weight of the algorithm: massive number of local variables, large code
-     * size, and lots of random array accesses.
-     *
-     * Also, AA&N can be optimized a lot: AA&N, rolled loops, double[][] ->
-     * double[][]: 21.162 seconds AA&N, rolled loops, float[][] -> float[][]: no
-     * improvement, but at some stage Hotspot might start doing SIMD, so let's
-     * use float AA&N, rolled loops, float[] -> float[][]: 19.979 seconds
-     * apparently 2D arrays are slow! AA&N, rolled loops, inlined 1D AA&N
-     * transform, float[] transformed in-place: 18.5 seconds AA&N, previous
-     * version rewritten in C and compiled with "gcc -O3" takes: 8.5 seconds
-     * (probably due to heavy use of SIMD)
-     *
-     * Other brave attempts: AA&N, best float version converted to 16:16 fixed
-     * point: 23.923 seconds
-     *
-     * Anyway the best float version stays. 18.5 seconds = 5.4 million
-     * transforms per second per core :-)
+
+    static final int CENTERJSAMPLE = 128;
+    static final int MAXJSAMPLE = 255;
+    static final int RANGE_MASK = (MAXJSAMPLE * 4 + 3);
+
+    static int[] range_limit = new int[5 * (MAXJSAMPLE + 1) + CENTERJSAMPLE];
+
+    static final float[] AANscaleFactor =
+            {1.0f, 1.387039845f, 1.306562965f, 1.175875602f, 1.0f, 0.785694958f, 0.541196100f, 0.275899379f};
+
+    static {
+        prepareRangeLimitTable();
+    }
+
+    private static void prepareRangeLimitTable() {
+        int offset = 0;
+        offset += (MAXJSAMPLE + 1);
+          /* First segment of "simple" table: limit[x] = 0 for x < 0 */
+        Arrays.fill(range_limit, offset - (MAXJSAMPLE + 1), MAXJSAMPLE + 1, 0);
+         /* Main part of "simple" table: limit[x] = x */
+        for (int i = 0; i <= MAXJSAMPLE; i++)
+            range_limit[offset + i] = i;
+        offset += CENTERJSAMPLE;	/* Point to where post-IDCT table starts */
+         /* End of simple table, rest of first half of post-IDCT table */
+        for (int i = CENTERJSAMPLE; i < 2 * (MAXJSAMPLE + 1); i++)
+            range_limit[offset + i] = MAXJSAMPLE;
+        /* Second half of post-IDCT table */
+        Arrays.fill(range_limit, offset + (2 * (MAXJSAMPLE + 1)),
+                offset + (4 * (MAXJSAMPLE + 1) - CENTERJSAMPLE), 0);
+
+        offset += (4 * (MAXJSAMPLE + 1) - CENTERJSAMPLE);
+        for (int i = 0; i < CENTERJSAMPLE; i++) {
+            range_limit[offset + i] = range_limit[i + (MAXJSAMPLE + 1)];
+        }
+    }
+
+    /* For float AA&N IDCT method, divisors are equal to quantization
+     * coefficients scaled by scalefactor[row]*scalefactor[col], where
+     *   scalefactor[0] = 1
+     *   scalefactor[k] = cos(k*PI/16) * sqrt(2)    for k=1..7
+     * We apply a further scale factor of 8.
+     * What's actually stored is 1/divisor so that the inner loop can
+     * use a multiplication rather than a division.
      */
-
-    private static final float[] dctScalingFactors = {
-            (float) (0.5 / Math.sqrt(2.0)),
-            (float) (0.25 / Math.cos(Math.PI / 16.0)),
-            (float) (0.25 / Math.cos(2.0 * Math.PI / 16.0)),
-            (float) (0.25 / Math.cos(3.0 * Math.PI / 16.0)),
-            (float) (0.25 / Math.cos(4.0 * Math.PI / 16.0)),
-            (float) (0.25 / Math.cos(5.0 * Math.PI / 16.0)),
-            (float) (0.25 / Math.cos(6.0 * Math.PI / 16.0)),
-            (float) (0.25 / Math.cos(7.0 * Math.PI / 16.0)),};
-
-    private static final float[] idctScalingFactors = {
-            (float) (2.0 * 4.0 / Math.sqrt(2.0) * 0.0625),
-            (float) (4.0 * Math.cos(Math.PI / 16.0) * 0.125),
-            (float) (4.0 * Math.cos(2.0 * Math.PI / 16.0) * 0.125),
-            (float) (4.0 * Math.cos(3.0 * Math.PI / 16.0) * 0.125),
-            (float) (4.0 * Math.cos(4.0 * Math.PI / 16.0) * 0.125),
-            (float) (4.0 * Math.cos(5.0 * Math.PI / 16.0) * 0.125),
-            (float) (4.0 * Math.cos(6.0 * Math.PI / 16.0) * 0.125),
-            (float) (4.0 * Math.cos(7.0 * Math.PI / 16.0) * 0.125),};
-
-    private static final float A1 = (float) (Math.cos(2.0 * Math.PI / 8.0));
-    private static final float A2 = (float) (Math.cos(Math.PI / 8.0) - Math
-            .cos(3.0 * Math.PI / 8.0));
-    private static final float A3 = A1;
-    private static final float A4 = (float) (Math.cos(Math.PI / 8.0) + Math
-            .cos(3.0 * Math.PI / 8.0));
-    private static final float A5 = (float) (Math.cos(3.0 * Math.PI / 8.0));
-
-    private static final float C2 = (float) (2.0 * Math.cos(Math.PI / 8));
-    private static final float C4 = (float) (2.0 * Math
-            .cos(2 * Math.PI / 8));
-    private static final float C6 = (float) (2.0 * Math
-            .cos(3 * Math.PI / 8));
-    private static final float Q = C2 - C6;
-    private static final float R = C2 + C6;
-
-    public static float[]  scaleQuantizationMatrix(final int[] matrix) {
+    public static float[] scaleQuantizationMatrix(final int[] matrix) {
         float[] output = new float[64];
         for (int y = 0; y < 8; y++) {
             for (int x = 0; x < 8; x++) {
-                output[8 * y + x] = 1.0f / matrix[8 * y + x]
-                        * dctScalingFactors[y]
-                        * dctScalingFactors[x];
+                output[8 * y + x] = 1.0f / (matrix[8 * y + x]
+                        * AANscaleFactor[y]
+                        * AANscaleFactor[x]
+                        * 8f);
             }
         }
         return output;
     }
 
-    public static float[]  scaleDequantizationMatrix(final int[] matrix) {
+    public static float[] scaleDequantizationMatrix(final int[] matrix) {
         float[] output = new float[64];
         for (int y = 0; y < 8; y++) {
             for (int x = 0; x < 8; x++) {
-                output[8 * y + x] = matrix[8 * y + x] * idctScalingFactors[y]
-                        * idctScalingFactors[x];
+                output[8 * y + x] = matrix[8 * y + x] * AANscaleFactor[y]
+                        * AANscaleFactor[x];
             }
         }
         return output;
     }
 
-    /**
-     * Fast forward Dct using AA&N. Taken from the book
-     * "JPEG still image data compression standard", by Pennebaker and Mitchell,
-     * chapter 4, figure "4-8".
-     */
-    public static void forwardDCT8(final float[] vector) {
-        final float a00 = vector[0] + vector[7];
-        final float a10 = vector[1] + vector[6];
-        final float a20 = vector[2] + vector[5];
-        final float a30 = vector[3] + vector[4];
-        final float a40 = vector[3] - vector[4];
-        final float a50 = vector[2] - vector[5];
-        final float a60 = vector[1] - vector[6];
-        final float a70 = vector[0] - vector[7];
-
-        final float a01 = a00 + a30;
-        final float a11 = a10 + a20;
-        final float a21 = a10 - a20;
-        final float a31 = a00 - a30;
-        // Avoid some negations:
-        // float a41 = -a40 - a50;
-        final float neg_a41 = a40 + a50;
-        final float a51 = a50 + a60;
-        final float a61 = a60 + a70;
-
-        final float a22 = a21 + a31;
-
-        final float a23 = a22 * A1;
-        final float mul5 = (a61 - neg_a41) * A5;
-        final float a43 = neg_a41 * A2 - mul5;
-        final float a53 = a51 * A3;
-        final float a63 = a61 * A4 - mul5;
-
-        final float a54 = a70 + a53;
-        final float a74 = a70 - a53;
-
-        vector[0] = a01 + a11;
-        vector[4] = a01 - a11;
-        vector[2] = a31 + a23;
-        vector[6] = a31 - a23;
-        vector[5] = a74 + a43;
-        vector[1] = a54 + a63;
-        vector[7] = a54 - a63;
-        vector[3] = a74 - a43;
-    }
-
-    public static float[][] forwardDCT(final float[][] matrix) {
-        float a00, a10, a20, a30, a40, a50, a60, a70;
-        float a01, a11, a21, a31, neg_a41, a51, a61;
-        float a22, a23, mul5, a43, a53, a63;
-        float a54, a74;
-
-        for (int i = 0; i < 8; i++) {
-            a00 = matrix[i][0] + matrix[i][7];
-            a10 = matrix[i][1] + matrix[i][6];
-            a20 = matrix[i][2] + matrix[i][5];
-            a30 = matrix[i][3] + matrix[i][4];
-            a40 = matrix[i][3] - matrix[i][4];
-            a50 = matrix[i][2] - matrix[i][5];
-            a60 = matrix[i][1] - matrix[i][6];
-            a70 = matrix[i][0] - matrix[i][7];
-            a01 = a00 + a30;
-            a11 = a10 + a20;
-            a21 = a10 - a20;
-            a31 = a00 - a30;
-            neg_a41 = a40 + a50;
-            a51 = a50 + a60;
-            a61 = a60 + a70;
-            a22 = a21 + a31;
-            a23 = a22 * A1;
-            mul5 = (a61 - neg_a41) * A5;
-            a43 = neg_a41 * A2 - mul5;
-            a53 = a51 * A3;
-            a63 = a61 * A4 - mul5;
-            a54 = a70 + a53;
-            a74 = a70 - a53;
-            matrix[i][0] = a01 + a11;
-            matrix[i][4] = a01 - a11;
-            matrix[i][2] = a31 + a23;
-            matrix[i][6] = a31 - a23;
-            matrix[i][5] = a74 + a43;
-            matrix[i][1] = a54 + a63;
-            matrix[i][7] = a54 - a63;
-            matrix[i][3] = a74 - a43;
-        }
-
-        for (int i = 0; i < 8; i++) {
-            a00 = matrix[0][i] + matrix[7][i];
-            a10 = matrix[1][i] + matrix[6][i];
-            a20 = matrix[2][i] + matrix[5][i];
-            a30 = matrix[3][i] + matrix[4][i];
-            a40 = matrix[3][i] - matrix[4][i];
-            a50 = matrix[2][i] - matrix[5][i];
-            a60 = matrix[1][i] - matrix[6][i];
-            a70 = matrix[0][i] - matrix[7][i];
-            a01 = a00 + a30;
-            a11 = a10 + a20;
-            a21 = a10 - a20;
-            a31 = a00 - a30;
-            neg_a41 = a40 + a50;
-            a51 = a50 + a60;
-            a61 = a60 + a70;
-            a22 = a21 + a31;
-            a23 = a22 * A1;
-            mul5 = (a61 - neg_a41) * A5;
-            a43 = neg_a41 * A2 - mul5;
-            a53 = a51 * A3;
-            a63 = a61 * A4 - mul5;
-            a54 = a70 + a53;
-            a74 = a70 - a53;
-            matrix[0][i] = a01 + a11;
-            matrix[4][i] = a01 - a11;
-            matrix[2][i] = a31 + a23;
-            matrix[6][i] = a31 - a23;
-            matrix[5][i] = a74 + a43;
-            matrix[1][i] = a54 + a63;
-            matrix[7][i] = a54 - a63;
-            matrix[3][i] = a74 - a43;
-        }
-        return matrix;
-    }
 
     /**
-     * Fast inverse Dct using AA&N. This is taken from the beautiful
-     * http://vsr.informatik.tu-chemnitz.de/~jan/MPEG/HTML/IDCT.html which gives
-     * easy equations and properly explains constants and scaling factors. Terms
-     * have been inlined and the negation optimized out of existence.
+     * Perform the forward DCT on one block of samples.
      */
-    public static void inverseDCT(final float[] vector) {
-        // B1
-        final float a2 = vector[2] - vector[6];
-        final float a3 = vector[2] + vector[6];
-        final float a4 = vector[5] - vector[3];
-        final float tmp1 = vector[1] + vector[7];
-        final float tmp2 = vector[3] + vector[5];
-        final float a5 = tmp1 - tmp2;
-        final float a6 = vector[1] - vector[7];
-        final float a7 = tmp1 + tmp2;
+    public static float[][] forwardDCT(float[][] data) {
+        float tmp0, tmp1, tmp2, tmp3, tmp4, tmp5, tmp6, tmp7;
+        float tmp10, tmp11, tmp12, tmp13;
+        float z1, z2, z3, z4, z5, z11, z13;
 
-        // M
-        final float tmp4 = C6 * (a4 + a6);
-        // Eliminate the negative:
-        // float b4 = -Q*a4 - tmp4;
-        final float neg_b4 = Q * a4 + tmp4;
-        final float b6 = R * a6 - tmp4;
-        final float b2 = a2 * C4;
-        final float b5 = a5 * C4;
+  /* Pass 1: process rows. */
 
-        // A1
-        final float tmp3 = b6 - a7;
-        final float n0 = tmp3 - b5;
-        final float n1 = vector[0] - vector[4];
-        final float n2 = b2 - a3;
-        final float n3 = vector[0] + vector[4];
-        final float neg_n5 = neg_b4;
+        for (int i = 0; i < 8; i++) {
+            tmp0 = data[i][0] + data[i][7];
+            tmp7 = data[i][0] - data[i][7];
+            tmp1 = data[i][1] + data[i][6];
+            tmp6 = data[i][1] - data[i][6];
+            tmp2 = data[i][2] + data[i][5];
+            tmp5 = data[i][2] - data[i][5];
+            tmp3 = data[i][3] + data[i][4];
+            tmp4 = data[i][3] - data[i][4];
+    
+    /* Even part */
 
-        // A2
-        final float m3 = n1 + n2;
-        final float m4 = n3 + a3;
-        final float m5 = n1 - n2;
-        final float m6 = n3 - a3;
-        // float m7 = n5 - n0;
-        final float neg_m7 = neg_n5 + n0;
+            tmp10 = tmp0 + tmp3;	/* phase 2 */
+            tmp13 = tmp0 - tmp3;
+            tmp11 = tmp1 + tmp2;
+            tmp12 = tmp1 - tmp2;
 
-        // A3
-        vector[0] = m4 + a7;
-        vector[1] = m3 + tmp3;
-        vector[2] = m5 - n0;
-        vector[3] = m6 + neg_m7;
-        vector[4] = m6 - neg_m7;
-        vector[5] = m5 + n0;
-        vector[6] = m3 - tmp3;
-        vector[7] = m4 - a7;
+            data[i][0] = tmp10 + tmp11; /* phase 3 */
+            data[i][4] = tmp10 - tmp11;
+
+            z1 = (tmp12 + tmp13) * ((float) 0.707106781); /* c4 */
+            data[i][2] = tmp13 + z1;	/* phase 5 */
+            data[i][6] = tmp13 - z1;
+    
+    /* Odd part */
+
+            tmp10 = tmp4 + tmp5;	/* phase 2 */
+            tmp11 = tmp5 + tmp6;
+            tmp12 = tmp6 + tmp7;
+
+    /* The rotator is modified from fig 4-8 to avoid extra negations. */
+            z5 = (tmp10 - tmp12) * ((float) 0.382683433); /* c6 */
+            z2 = ((float) 0.541196100) * tmp10 + z5; /* c2-c6 */
+            z4 = ((float) 1.306562965) * tmp12 + z5; /* c2+c6 */
+            z3 = tmp11 * ((float) 0.707106781); /* c4 */
+
+            z11 = tmp7 + z3;		/* phase 5 */
+            z13 = tmp7 - z3;
+
+            data[i][5] = z13 + z2;	/* phase 6 */
+            data[i][3] = z13 - z2;
+            data[i][1] = z11 + z4;
+            data[i][7] = z11 - z4;
+        }
+
+  /* Pass 2: process columns. */
+
+        for (int i = 0; i < 8; i++) {
+            tmp0 = data[0][i] + data[7][i];
+            tmp7 = data[0][i] - data[7][i];
+            tmp1 = data[1][i] + data[6][i];
+            tmp6 = data[1][i] - data[6][i];
+            tmp2 = data[2][i] + data[5][i];
+            tmp5 = data[2][i] - data[5][i];
+            tmp3 = data[3][i] + data[4][i];
+            tmp4 = data[3][i] - data[4][i];
+    
+    /* Even part */
+
+            tmp10 = tmp0 + tmp3;	/* phase 2 */
+            tmp13 = tmp0 - tmp3;
+            tmp11 = tmp1 + tmp2;
+            tmp12 = tmp1 - tmp2;
+
+            data[0][i] = tmp10 + tmp11; /* phase 3 */
+            data[4][i] = tmp10 - tmp11;
+
+            z1 = (tmp12 + tmp13) * ((float) 0.707106781); /* c4 */
+            data[2][i] = tmp13 + z1; /* phase 5 */
+            data[6][i] = tmp13 - z1;
+    
+    /* Odd part */
+
+            tmp10 = tmp4 + tmp5;	/* phase 2 */
+            tmp11 = tmp5 + tmp6;
+            tmp12 = tmp6 + tmp7;
+
+    /* The rotator is modified from fig 4-8 to avoid extra negations. */
+            z5 = (tmp10 - tmp12) * ((float) 0.382683433); /* c6 */
+            z2 = ((float) 0.541196100) * tmp10 + z5; /* c2-c6 */
+            z4 = ((float) 1.306562965) * tmp12 + z5; /* c2+c6 */
+            z3 = tmp11 * ((float) 0.707106781); /* c4 */
+
+            z11 = tmp7 + z3;		/* phase 5 */
+            z13 = tmp7 - z3;
+
+            data[5][i] = z13 + z2; /* phase 6 */
+            data[3][i] = z13 - z2;
+            data[1][i] = z11 + z4;
+            data[7][i] = z11 - z4;
+        }
+
+        return data;
     }
 
-    public static float[][] inverseDCT(final float[][] matrix) {
-        float a2, a3, a4, tmp1, tmp2, a5, a6, a7;
-        float tmp4, neg_b4, b6, b2, b5;
-        float tmp3, n0, n1, n2, n3, neg_n5;
-        float m3, m4, m5, m6, neg_m7;
+
+    /**
+     * Perform dequantization and inverse DCT on one block of coefficients.
+     *
+     * @param data
+     * @return
+     */
+    public static float[][] inverseDCT(float[][] data) {
+        float tmp0, tmp1, tmp2, tmp3, tmp4, tmp5, tmp6, tmp7;
+        float tmp10, tmp11, tmp12, tmp13;
+        float z5, z10, z11, z12, z13;
+
+  /* Pass 1: process columns from input, store into work array. */
 
         for (int i = 0; i < 8; i++) {
-            a2 = matrix[i][2] - matrix[i][6];
-            a3 = matrix[i][2] + matrix[i][6];
-            a4 = matrix[i][5] - matrix[i][3];
-            tmp1 = matrix[i][1] + matrix[i][7];
-            tmp2 = matrix[i][3] + matrix[i][5];
-            a5 = tmp1 - tmp2;
-            a6 = matrix[i][1] - matrix[i][7];
-            a7 = tmp1 + tmp2;
-            tmp4 = C6 * (a4 + a6);
-            neg_b4 = Q * a4 + tmp4;
-            b6 = R * a6 - tmp4;
-            b2 = a2 * C4;
-            b5 = a5 * C4;
-            tmp3 = b6 - a7;
-            n0 = tmp3 - b5;
-            n1 = matrix[i][0] - matrix[i][4];
-            n2 = b2 - a3;
-            n3 = matrix[i][0] + matrix[i][4];
-            neg_n5 = neg_b4;
-            m3 = n1 + n2;
-            m4 = n3 + a3;
-            m5 = n1 - n2;
-            m6 = n3 - a3;
-            neg_m7 = neg_n5 + n0;
-            matrix[i][0] = m4 + a7;
-            matrix[i][1] = m3 + tmp3;
-            matrix[i][2] = m5 - n0;
-            matrix[i][3] = m6 + neg_m7;
-            matrix[i][4] = m6 - neg_m7;
-            matrix[i][5] = m5 + n0;
-            matrix[i][6] = m3 - tmp3;
-            matrix[i][7] = m4 - a7;
+    /* Due to quantization, we will usually find that many of the input
+     * coefficients are zero, especially the AC terms.  We can exploit this
+     * by short-circuiting the IDCT calculation for any column in which all
+     * the AC terms are zero.  In that case each output is equal to the
+     * DC coefficient (with scale factor as needed).
+     * With typical images and quantization tables, half or more of the
+     * column DCT calculations can be simplified this way.
+     */
+
+            if (data[1][i] == 0 && data[2][i] == 0 &&
+                    data[3][i] == 0 && data[4][i] == 0 &&
+                    data[5][i] == 0 && data[6][i] == 0 &&
+                    data[7][i] == 0) {
+      /* AC terms all zero */
+                float dcval = data[0][i];
+
+                data[0][i] = dcval;
+                data[1][i] = dcval;
+                data[2][i] = dcval;
+                data[3][i] = dcval;
+                data[4][i] = dcval;
+                data[5][i] = dcval;
+                data[6][i] = dcval;
+                data[7][i] = dcval;
+                continue;
+            }
+
+    /* Even part */
+
+            tmp0 = data[0][i];
+            tmp1 = data[2][i];
+            tmp2 = data[4][i];
+            tmp3 = data[6][i];
+
+            tmp10 = tmp0 + tmp2;	/* phase 3 */
+            tmp11 = tmp0 - tmp2;
+
+            tmp13 = tmp1 + tmp3;	/* phases 5-3 */
+            tmp12 = (tmp1 - tmp3) * ((float) 1.414213562) - tmp13; /* 2*c4 */
+
+            tmp0 = tmp10 + tmp13;	/* phase 2 */
+            tmp3 = tmp10 - tmp13;
+            tmp1 = tmp11 + tmp12;
+            tmp2 = tmp11 - tmp12;
+
+    /* Odd part */
+
+            tmp4 = data[1][i];
+            tmp5 = data[3][i];
+            tmp6 = data[5][i];
+            tmp7 = data[7][i];
+
+            z13 = tmp6 + tmp5;		/* phase 6 */
+            z10 = tmp6 - tmp5;
+            z11 = tmp4 + tmp7;
+            z12 = tmp4 - tmp7;
+
+            tmp7 = z11 + z13;		/* phase 5 */
+            tmp11 = (z11 - z13) * ((float) 1.414213562); /* 2*c4 */
+
+            z5 = (z10 + z12) * ((float) 1.847759065); /* 2*c2 */
+            tmp10 = ((float) 1.082392200) * z12 - z5; /* 2*(c2-c6) */
+            tmp12 = ((float) -2.613125930) * z10 + z5; /* -2*(c2+c6) */
+
+            tmp6 = tmp12 - tmp7;	/* phase 2 */
+            tmp5 = tmp11 - tmp6;
+            tmp4 = tmp10 + tmp5;
+
+            data[0][i] = tmp0 + tmp7;
+            data[7][i] = tmp0 - tmp7;
+            data[1][i] = tmp1 + tmp6;
+            data[6][i] = tmp1 - tmp6;
+            data[2][i] = tmp2 + tmp5;
+            data[5][i] = tmp2 - tmp5;
+            data[4][i] = tmp3 + tmp4;
+            data[3][i] = tmp3 - tmp4;
         }
+
+  /* Pass 2: process rows from work array, store into output array. */
+  /* Note that we must descale the results by a factor of 8 == 2**3. */
+
 
         for (int i = 0; i < 8; i++) {
-            a2 = matrix[2][i] - matrix[6][i];
-            a3 = matrix[2][i] + matrix[6][i];
-            a4 = matrix[5][i] - matrix[3][i];
-            tmp1 = matrix[1][i] + matrix[7][i];
-            tmp2 = matrix[3][i] + matrix[5][i];
-            a5 = tmp1 - tmp2;
-            a6 = matrix[2][i] - matrix[7][i];
-            a7 = tmp1 + tmp2;
-            tmp4 = C6 * (a4 + a6);
-            neg_b4 = Q * a4 + tmp4;
-            b6 = R * a6 - tmp4;
-            b2 = a2 * C4;
-            b5 = a5 * C4;
-            tmp3 = b6 - a7;
-            n0 = tmp3 - b5;
-            n1 = matrix[0][i] - matrix[4][i];
-            n2 = b2 - a3;
-            n3 = matrix[0][i] + matrix[4][i];
-            neg_n5 = neg_b4;
-            m3 = n1 + n2;
-            m4 = n3 + a3;
-            m5 = n1 - n2;
-            m6 = n3 - a3;
-            neg_m7 = neg_n5 + n0;
-            matrix[0][i] = m4 + a7;
-            matrix[1][i] = m3 + tmp3;
-            matrix[2][i] = m5 - n0;
-            matrix[3][i] = m6 + neg_m7;
-            matrix[4][i] = m6 - neg_m7;
-            matrix[5][i] = m5 + n0;
-            matrix[6][i] = m3 - tmp3;
-            matrix[7][i] = m4 - a7;
-        }
+    /* Rows of zeroes can be exploited in the same way as we did with columns.
+     * However, the column calculation has created many nonzero AC terms, so
+     * the simplification applies less often (typically 5% to 10% of the time).
+     * And testing floats for zero is relatively expensive, so we don't bother.
+     */
 
-        return matrix;
+    /* Even part */
+
+            tmp10 = data[i][0] + data[i][4];
+            tmp11 = data[i][0] - data[i][4];
+
+            tmp13 = data[i][2] + data[i][6];
+            tmp12 = (data[i][2] - data[i][6]) * ((float) 1.414213562) - tmp13;
+
+            tmp0 = tmp10 + tmp13;
+            tmp3 = tmp10 - tmp13;
+            tmp1 = tmp11 + tmp12;
+            tmp2 = tmp11 - tmp12;
+
+    /* Odd part */
+
+            z13 = data[i][5] + data[i][3];
+            z10 = data[i][5] - data[i][3];
+            z11 = data[i][1] + data[i][7];
+            z12 = data[i][1] - data[i][7];
+
+            tmp7 = z11 + z13;
+            tmp11 = (z11 - z13) * ((float) 1.414213562);
+
+            z5 = (z10 + z12) * ((float) 1.847759065); /* 2*c2 */
+            tmp10 = ((float) 1.082392200) * z12 - z5; /* 2*(c2-c6) */
+            tmp12 = ((float) -2.613125930) * z10 + z5; /* -2*(c2+c6) */
+
+            tmp6 = tmp12 - tmp7;
+            tmp5 = tmp11 - tmp6;
+            tmp4 = tmp10 + tmp5;
+
+    /* Final output stage: scale down by a factor of 8 and range-limit */
+
+            data[i][0] = range_limit[(MAXJSAMPLE + 1) + rightShift((int) (tmp0 + tmp7), 3) & RANGE_MASK];
+            data[i][7] = range_limit[(MAXJSAMPLE + 1) + rightShift((int) (tmp0 - tmp7), 3) & RANGE_MASK];
+            data[i][1] = range_limit[(MAXJSAMPLE + 1) + rightShift((int) (tmp1 + tmp6), 3) & RANGE_MASK];
+            data[i][6] = range_limit[(MAXJSAMPLE + 1) + rightShift((int) (tmp1 - tmp6), 3) & RANGE_MASK];
+            data[i][2] = range_limit[(MAXJSAMPLE + 1) + rightShift((int) (tmp2 + tmp5), 3) & RANGE_MASK];
+            data[i][5] = range_limit[(MAXJSAMPLE + 1) + rightShift((int) (tmp2 - tmp5), 3) & RANGE_MASK];
+            data[i][4] = range_limit[(MAXJSAMPLE + 1) + rightShift((int) (tmp3 + tmp4), 3) & RANGE_MASK];
+            data[i][3] = range_limit[(MAXJSAMPLE + 1) + rightShift((int) (tmp3 - tmp4), 3) & RANGE_MASK];
+        }
+        return data;
+    }
+
+    private static int rightShift(int val, int shift) {
+        return (val < 0 ?
+                (val >> (shift)) | ((~(0)) << (32 - (shift))) :
+                (val >> (shift)));
     }
 }
