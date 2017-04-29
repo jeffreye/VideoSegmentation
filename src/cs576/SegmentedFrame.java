@@ -8,6 +8,7 @@ import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
 import java.nio.channels.FileChannel;
 import java.util.ArrayList;
+import static java.lang.Math.max;
 
 import static cs576.Utils.*;
 import static cs576.VideoEncoder.MACROBLOCK_LENGTH;
@@ -18,7 +19,6 @@ import static cs576.VideoEncoder.MACROBLOCK_LENGTH;
 public class SegmentedFrame extends Frame {
 
     SegmentedFrame referenceFrame;
-
     /**
      * motion vectors that are related to last frame
      */
@@ -30,14 +30,12 @@ public class SegmentedFrame extends Frame {
 
     public SegmentedFrame(int height, int width) {
         super(height, width);
-
         byteBuffer = ByteBuffer.allocateDirect(getDctValueSize(height, width) * 64 * 4);
     }
 
     public SegmentedFrame(byte[] imageBuffer, int height, int width) {
         super(imageBuffer, height, width);
         setData();
-
         byteBuffer = ByteBuffer.allocateDirect(getDctValueSize(height, width) * 64 * 4);
     }
 
@@ -71,6 +69,7 @@ public class SegmentedFrame extends Frame {
 
 
     public boolean loadFrom(FileChannel inputStream) throws IOException {
+        long startPos = inputStream.position();
         byteBuffer.clear();
         byteBuffer.limit(macroblocks.length * 4);
         int read = inputStream.read(byteBuffer);
@@ -88,6 +87,7 @@ public class SegmentedFrame extends Frame {
         byteBuffer.flip();
 
         int size = byteBuffer.getInt();
+
         this.motionVectors = new ArrayList<>(size);
 
         byteBuffer.clear();
@@ -116,6 +116,8 @@ public class SegmentedFrame extends Frame {
         for (int i = 0; i < dctValues.length; i++) {
             dctBuffer.get(dctValues[i]);
         }
+
+
 
         return true;
     }
@@ -469,6 +471,7 @@ public class SegmentedFrame extends Frame {
         byteBuffer.limit(byteBuffer.capacity());
         os.write(byteBuffer);
     }
+
 
     public void getRawImage(int[] rawImage) {
         Utils.convertToRGB(imageY, imageU, imageV, rawImage);

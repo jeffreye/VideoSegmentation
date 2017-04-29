@@ -14,11 +14,13 @@ import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.MouseMotionListener;
 import java.awt.event.MouseEvent;
+import javax.swing.event.ChangeEvent;
+import javax.swing.event.ChangeListener;
 
 /**
  * Created by Jeffreye on 4/1/2017.
  */
-public class VideoDecoder implements ActionListener,MouseMotionListener{
+public class VideoDecoder implements ActionListener,MouseMotionListener {
 
     private static final int BATCH_WORKS = 20;
     private final String inputFile;
@@ -29,12 +31,17 @@ public class VideoDecoder implements ActionListener,MouseMotionListener{
     private int height;
     private int pointerX, pointerY;
     private int videostatus;
+    private int currentFrame;
+    private boolean restartFlag;
+
 
     private BufferedImage image;
     private JFrame frame;
     private JLabel lbIm1;
     private JLabel lbText1;
     private JButton playpause;
+    private JButton restart;
+    private JSlider seekBar;
     private Queue<int[]> imgs;
     private Queue<int[]> imageBuffers;
     private Timer timer;
@@ -50,9 +57,10 @@ public class VideoDecoder implements ActionListener,MouseMotionListener{
         this.foregroundQuantizationValue = foregroundQuantizationValue;
         this.backgroundQuantizationValue = backgroundQuantizationValue;
         this.videostatus = 1;
-
+        this.currentFrame = 0;
         this.pointerX = 0;
         this.pointerY = 0;
+
 
         imgs = new ArrayDeque<>(10);
 //        allImgs = new ArrayList<>(100);
@@ -96,6 +104,22 @@ public class VideoDecoder implements ActionListener,MouseMotionListener{
         c.gridy = 2;
         frame.getContentPane().add(playpause, c);
 
+        restart = new JButton("Restart");
+        restart.addActionListener(this);
+
+        c.fill = GridBagConstraints.HORIZONTAL;
+        c.anchor = GridBagConstraints.CENTER;
+        c.gridx = 0;
+        c.gridy = 3;
+        frame.getContentPane().add(restart, c);
+
+        seekBar = new JSlider();
+
+        c.fill = GridBagConstraints.HORIZONTAL;
+        c.anchor = GridBagConstraints.CENTER;
+        c.gridx = 0;
+        c.gridy = 4;
+        frame.getContentPane().add(seekBar, c);
 
         frame.setTitle("Video Player");
         frame.pack();
@@ -120,6 +144,8 @@ public class VideoDecoder implements ActionListener,MouseMotionListener{
 
         image.getRaster().setDataElements(0, 0, width, height, buffer);
         lbIm1.repaint();
+        currentFrame++;
+        updateSlider();
     }
 
     public void decode() throws IOException {
@@ -132,7 +158,8 @@ public class VideoDecoder implements ActionListener,MouseMotionListener{
         width = buffer.getInt();
         height = buffer.getInt();
         int frameNumbers = buffer.getInt();
-
+        seekBar.setMinimum(0);
+        seekBar.setMaximum(frameNumbers-1);
         String result = String.format("Video height: %d, width: %d", height, width);
         lbText1.setText(result);
 
@@ -154,8 +181,14 @@ public class VideoDecoder implements ActionListener,MouseMotionListener{
         SegmentedFrame lastFrame = new SegmentedFrame(height, width);
         while (true) {
             // Reset to first frame
-            if (inputStream.size() == inputStream.position())
+
+
+            if (inputStream.size() == inputStream.position() || restartFlag) {
                 inputStream.position(4 * 3);
+                currentFrame = 0;
+                restartFlag = false;
+            }
+
 
             // Stop buffering
             if (imageBuffers.size() == 0)
@@ -250,6 +283,9 @@ public class VideoDecoder implements ActionListener,MouseMotionListener{
         if (src == playpause) {
             playOrPauseVideo();
         }
+        else if (src == restart) {
+            restartFlag = true;
+        }
     }
 
     public void mouseMoved(MouseEvent e) {
@@ -258,8 +294,14 @@ public class VideoDecoder implements ActionListener,MouseMotionListener{
     }
 
     public void mouseDragged(MouseEvent e) {
-        //do something
+
     }
+
+    public void updateSlider() {
+        seekBar.setValue(currentFrame);
+    }
+
+
 
 
     public static void main(String[] argv) {
