@@ -12,13 +12,13 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
-import java.awt.event.MouseListener;
+import java.awt.event.MouseMotionListener;
 import java.awt.event.MouseEvent;
 
 /**
  * Created by Jeffreye on 4/1/2017.
  */
-public class VideoDecoder implements ActionListener,MouseListener{
+public class VideoDecoder implements ActionListener,MouseMotionListener{
 
     private static final int BATCH_WORKS = 20;
     private final String inputFile;
@@ -27,6 +27,7 @@ public class VideoDecoder implements ActionListener,MouseListener{
     private final int backgroundQuantizationValue;
     private int width;
     private int height;
+    private int pointerX, pointerY;
     private int videostatus;
 
     private BufferedImage image;
@@ -38,6 +39,7 @@ public class VideoDecoder implements ActionListener,MouseListener{
     private Queue<int[]> imageBuffers;
     private Timer timer;
 
+
 //    int[] rawImage;
 
     private boolean doneDecoding;
@@ -48,6 +50,9 @@ public class VideoDecoder implements ActionListener,MouseListener{
         this.foregroundQuantizationValue = foregroundQuantizationValue;
         this.backgroundQuantizationValue = backgroundQuantizationValue;
         this.videostatus = 1;
+
+        this.pointerX = 0;
+        this.pointerY = 0;
 
         imgs = new ArrayDeque<>(10);
 //        allImgs = new ArrayList<>(100);
@@ -64,7 +69,7 @@ public class VideoDecoder implements ActionListener,MouseListener{
         String result = String.format("Video height: %d, width: %d", height, width);
         lbText1 = new JLabel(result);
         lbText1.setHorizontalAlignment(SwingConstants.CENTER);
-        frame.addMouseListener(this);
+        frame.addMouseMotionListener(this);
         lbIm1 = new JLabel();
 
         GridBagConstraints c = new GridBagConstraints();
@@ -166,7 +171,7 @@ public class VideoDecoder implements ActionListener,MouseListener{
             int[] rawImage = imageBuffers.remove();
 
             lastFrame.loadFrom(inputStream);
-            lastFrame = lastFrame.reconstruct(foregroundQuantizationValue, backgroundQuantizationValue);
+            lastFrame = lastFrame.reconstruct(foregroundQuantizationValue, backgroundQuantizationValue, pointerX, pointerY);
             lastFrame.getRawImage(rawImage);
 
             imgs.add(rawImage);
@@ -204,7 +209,7 @@ public class VideoDecoder implements ActionListener,MouseListener{
             }
 
             CompletableFuture<SegmentedFrame> current = CompletableFuture.completedFuture(new SegmentedFrame(height, width, inputStream));
-            lastFrame = lastFrame.thenCombineAsync(current, (last, curr) -> curr.reconstruct(foregroundQuantizationValue, backgroundQuantizationValue));
+            lastFrame = lastFrame.thenCombineAsync(current, (last, curr) -> curr.reconstruct(foregroundQuantizationValue, backgroundQuantizationValue, pointerX, pointerY));
 
             outputFuture.thenAcceptBoth(lastFrame, (o, last) -> {
                 try {
@@ -247,24 +252,13 @@ public class VideoDecoder implements ActionListener,MouseListener{
         }
     }
 
-    public void mousePressed(MouseEvent e) {
-        System.out.println("Mouse pressed " + e.getPoint().toString());
+    public void mouseMoved(MouseEvent e) {
+        this.pointerX = e.getX();
+        this.pointerY = e.getY();
     }
 
-    public void mouseEntered(MouseEvent e) {
-        return;
-    }
-
-    public void mouseExited(MouseEvent e) {
-        return;
-    }
-
-    public void mouseReleased(MouseEvent e) {
-        return;
-    }
-
-    public void mouseClicked(MouseEvent e) {
-        return;
+    public void mouseDragged(MouseEvent e) {
+        //do something
     }
 
 

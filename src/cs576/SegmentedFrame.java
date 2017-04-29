@@ -120,7 +120,7 @@ public class SegmentedFrame extends Frame {
         return true;
     }
 
-    public SegmentedFrame reconstruct(int foregroundQuantizationValue, int backgroundQuantizationValue) {
+    public SegmentedFrame reconstruct(int foregroundQuantizationValue, int backgroundQuantizationValue, int pointerX, int pointerY) {
 
         int blockIndex;
         int macroblockWidth = 1 + (width - 1) / MACROBLOCK_LENGTH;
@@ -128,11 +128,14 @@ public class SegmentedFrame extends Frame {
         for (int i = 0; i < height; i += DCT_BLOCK_LENGTH) {
             for (int j = 0; j < width; j += DCT_BLOCK_LENGTH) {
                 blockIndex = i / MACROBLOCK_LENGTH * macroblockWidth + j / MACROBLOCK_LENGTH;
+
                 int quantizationValue =
                         macroblocks[blockIndex].isBackgroundLayer() ?
                                 backgroundQuantizationValue :
                                 foregroundQuantizationValue;
-
+                if(dist2(macroblocks[blockIndex].getX(),macroblocks[blockIndex].getY(),pointerX-32, pointerY-32)<4096){
+                    quantizationValue = 1;
+                }
                 for (int k = 0; k < 3; k++) {
                     quantize(dctValues[dctIndex], quantizationValue);
                     dequantize(dctValues[dctIndex], quantizationValue);
