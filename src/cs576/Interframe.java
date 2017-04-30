@@ -1,11 +1,11 @@
 package cs576;
 
-import java.io.*;
-import java.nio.ByteBuffer;
-import java.nio.FloatBuffer;
+import java.io.DataInput;
+import java.io.DataOutput;
+import java.io.IOException;
 
+import static cs576.Macroblock.MACROBLOCK_LENGTH;
 import static cs576.Utils.*;
-import static cs576.VideoEncoder.MACROBLOCK_LENGTH;
 
 /**
  * Created by Jeffreye on 4/1/2017.

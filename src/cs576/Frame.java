@@ -2,9 +2,9 @@ package cs576;
 
 import java.io.DataOutput;
 
+import static cs576.Macroblock.MACROBLOCK_LENGTH;
 import static cs576.Utils.convertToRGB;
 import static cs576.Utils.convertToYUV;
-import static cs576.VideoEncoder.MACROBLOCK_LENGTH;
 
 /**
  * Created by Jeffreye on 4/16/2017.

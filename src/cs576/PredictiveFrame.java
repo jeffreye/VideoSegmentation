@@ -1,15 +1,12 @@
 package cs576;
 
-import javax.crypto.Mac;
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Map;
 
 import static cs576.Utils.*;
-import static cs576.VideoEncoder.MACROBLOCK_LENGTH;
+import static cs576.Macroblock.MACROBLOCK_LENGTH;
 
 /**
  * Created by Jeffreye on 4/15/2017.

@@ -11,7 +11,7 @@ import java.util.ArrayList;
 import java.util.concurrent.ThreadLocalRandom;
 
 import static cs576.Utils.*;
-import static cs576.VideoEncoder.MACROBLOCK_LENGTH;
+import static cs576.Macroblock.MACROBLOCK_LENGTH;
 
 /**
  * Created by Jeffreye on 4/15/2017.

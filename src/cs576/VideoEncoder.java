@@ -12,17 +12,11 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public class VideoEncoder {
 
-    static final int MACROBLOCK_LENGTH = 16;
-
     private String inputFile;
     private String outputFile;
     private int width;
     private int height;
     private static final int k =10;
-
-    private static final int BATCH_WORKS = 20;
-
-    private ConcurrentSkipListMap<Integer, Frame> frames;
 
     private ByteBuffer bytes;
 
@@ -31,7 +25,6 @@ public class VideoEncoder {
         this.inputFile = inputFile;
         this.width = width;
         this.height = height;
-        frames = new ConcurrentSkipListMap<>();
 
         bytes = ByteBuffer.allocate(height * width * 3);
     }
@@ -39,9 +32,8 @@ public class VideoEncoder {
 
     byte[] readImage(FileChannel inputStream) throws IOException {
 
-        int numRead = 0;
         bytes.clear();
-        while (bytes.hasRemaining() && (numRead = inputStream.read(bytes)) >= 0) {
+        while (bytes.hasRemaining() && inputStream.read(bytes) >= 0) {
 
         }
         return bytes.array();
@@ -101,67 +93,6 @@ public class VideoEncoder {
 
         prev.serialize(outputStream);
         frameCount++;
-
-        System.out.println("\rDONE");
-    }
-
-    public void encodeAsync(FileChannel inputStream, DataOutputStream outputStream, int frameNumbers) throws IOException {
-        int frameCount = 0;
-        CompletableFuture<SegmentedFrame> lastFrame =
-                CompletableFuture.completedFuture(readImage(inputStream))
-                        .thenApplyAsync(firstFrame -> new SegmentedFrame(firstFrame, height, width));
-
-        CompletableFuture<Void> outputFuture = CompletableFuture.completedFuture(null);
-        AtomicInteger processedInteger = new AtomicInteger(0);
-
-        while (frameCount < frameNumbers) {
-
-            if (frameCount % BATCH_WORKS == 0 && frameCount != 0) {
-                while (!lastFrame.isDone()) {
-                    try {
-                        Thread.sleep(1000);
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    }
-                    System.out.print("\r");
-                    System.out.print("Frame " + Integer.toString(processedInteger.get()) + "/" + Integer.toString(frameNumbers) + " Processed.");
-
-                }
-            }
-
-            lastFrame = CompletableFuture
-                    .completedFuture(readImage(inputStream))
-                    .thenApplyAsync(frameBuffer -> new SegmentedFrame(frameBuffer, height, width))
-                    .thenCombine(lastFrame, (curr, last) -> curr.computeDiff(last, k));
-
-            outputFuture = outputFuture.thenAcceptBoth(lastFrame, (o, frame) -> {
-                SegmentedFrame previousFrame = frame.referenceFrame;
-                if (previousFrame.referenceFrame == null) {
-                    try {
-                        previousFrame.serialize(outputStream);
-                        processedInteger.incrementAndGet();
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
-                }
-
-                try {
-                    frame.serialize(outputStream);
-                    processedInteger.incrementAndGet();
-                    outputStream.flush();
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-
-                // release reference so that GC could collect them
-                previousFrame.referenceFrame = null;
-            });
-
-            frameCount++;
-        }
-
-
-        outputFuture.join();
 
         System.out.println("\rDONE");
     }
