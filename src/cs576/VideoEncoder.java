@@ -86,7 +86,13 @@ public class VideoEncoder {
             prev = curr;
 
             // release reference so that GC could collect them
-            prev.referenceFrame = null;
+            final int RESERVED_FRAMES = 10;
+            SegmentedFrame f = curr;
+            for (int i = 0; i < RESERVED_FRAMES && f != null; i++) {
+                f = f.referenceFrame;
+            }
+            if (f != null)
+                f.referenceFrame = null;
 
             System.out.print("\r");
             System.out.print("Frame " + Integer.toString(frameCount) + "/" + Integer.toString(frameNumbers) + " Processed.");
