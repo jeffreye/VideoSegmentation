@@ -279,6 +279,7 @@ public class SegmentedFrame extends Frame {
 //            }
 //        }
 
+        
 //        //hard way
 //        final double bgMinRadius=3;
 //        double tolerantRate=1;
