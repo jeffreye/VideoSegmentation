@@ -1,6 +1,7 @@
 package cs576;
 
 import static java.lang.Math.round;
+import static java.lang.Math.pow;
 
 /**
  * Created by Jeffreye on 4/15/2017.
@@ -296,6 +297,10 @@ public class Utils {
         int dctHeight = 1 + (height - 1) / DCT_BLOCK_LENGTH;
         int dctWidth = 1 + (width - 1) / DCT_BLOCK_LENGTH;
         return dctHeight * dctWidth * 3;
+    }
+
+    public static int dist2(int x1, int y1, int x2, int y2){
+        return (int)(pow(x2-x1,2) + pow(y2-y1,2));
     }
 
     public static void inverseDCTAndDequantize(byte[][] acValues, int[] dcValues, int height, int width, float[][] imageY, float[][] imageU, float[][] imageV) {

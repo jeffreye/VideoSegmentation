@@ -10,11 +10,17 @@ import java.util.ArrayDeque;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import java.awt.event.MouseMotionListener;
+import java.awt.event.MouseEvent;
+import javax.swing.event.ChangeEvent;
+import javax.swing.event.ChangeListener;
 
 /**
  * Created by Jeffreye on 4/1/2017.
  */
-public class VideoDecoder {
+public class VideoDecoder implements ActionListener,MouseMotionListener {
 
     private static final int BATCH_WORKS = 20;
     private final String inputFile;
@@ -23,15 +29,23 @@ public class VideoDecoder {
     private final int backgroundQuantizationValue;
     private int width;
     private int height;
+    private int pointerX, pointerY;
+    private int videostatus;
+    private int currentFrame;
+    private boolean restartFlag;
 
 
     private BufferedImage image;
     private JFrame frame;
     private JLabel lbIm1;
     private JLabel lbText1;
+    private JButton playpause;
+    private JButton restart;
+    private JSlider seekBar;
     private Queue<int[]> imgs;
     private Queue<int[]> imageBuffers;
     private Timer timer;
+
 
 //    int[] rawImage;
 
@@ -42,6 +56,10 @@ public class VideoDecoder {
         this.outputFile = outputFile;
         this.foregroundQuantizationValue = foregroundQuantizationValue;
         this.backgroundQuantizationValue = backgroundQuantizationValue;
+        this.videostatus = 1;
+        this.currentFrame = 0;
+        this.pointerX = 0;
+        this.pointerY = 0;
 
 
         imgs = new ArrayDeque<>(10);
@@ -51,6 +69,7 @@ public class VideoDecoder {
         showWindow(fps);
     }
 
+
     public void showWindow(int fps) {
         frame = new JFrame();
         GridBagLayout gLayout = new GridBagLayout();
@@ -58,7 +77,7 @@ public class VideoDecoder {
         String result = String.format("Video height: %d, width: %d", height, width);
         lbText1 = new JLabel(result);
         lbText1.setHorizontalAlignment(SwingConstants.CENTER);
-
+        frame.addMouseMotionListener(this);
         lbIm1 = new JLabel();
 
         GridBagConstraints c = new GridBagConstraints();
@@ -71,9 +90,36 @@ public class VideoDecoder {
 
 
         c.fill = GridBagConstraints.HORIZONTAL;
+        c.anchor = GridBagConstraints.CENTER;
         c.gridx = 0;
         c.gridy = 1;
         frame.getContentPane().add(lbIm1, c);
+
+        playpause = new JButton("Play/Pause");
+        playpause.addActionListener(this);
+
+        c.fill = GridBagConstraints.HORIZONTAL;
+        c.anchor = GridBagConstraints.CENTER;
+        c.gridx = 0;
+        c.gridy = 2;
+        frame.getContentPane().add(playpause, c);
+
+        restart = new JButton("Restart");
+        restart.addActionListener(this);
+
+        c.fill = GridBagConstraints.HORIZONTAL;
+        c.anchor = GridBagConstraints.CENTER;
+        c.gridx = 0;
+        c.gridy = 3;
+        frame.getContentPane().add(restart, c);
+
+        seekBar = new JSlider();
+
+        c.fill = GridBagConstraints.HORIZONTAL;
+        c.anchor = GridBagConstraints.CENTER;
+        c.gridx = 0;
+        c.gridy = 4;
+        frame.getContentPane().add(seekBar, c);
 
         frame.setTitle("Video Player");
         frame.pack();
@@ -87,6 +133,7 @@ public class VideoDecoder {
         timer.start();
     }
 
+
     private void refreshImage() {
 
         if (imgs.size() == 0)
@@ -97,6 +144,8 @@ public class VideoDecoder {
 
         image.getRaster().setDataElements(0, 0, width, height, buffer);
         lbIm1.repaint();
+        currentFrame++;
+        updateSlider();
     }
 
     public void decode() throws IOException {
@@ -109,7 +158,8 @@ public class VideoDecoder {
         width = buffer.getInt();
         height = buffer.getInt();
         int frameNumbers = buffer.getInt();
-
+        seekBar.setMinimum(0);
+        seekBar.setMaximum(frameNumbers-1);
         String result = String.format("Video height: %d, width: %d", height, width);
         lbText1.setText(result);
 
@@ -131,8 +181,14 @@ public class VideoDecoder {
         SegmentedFrame lastFrame = new SegmentedFrame(height, width);
         while (true) {
             // Reset to first frame
-            if (inputStream.size() == inputStream.position())
+
+
+            if (inputStream.size() == inputStream.position() || restartFlag) {
                 inputStream.position(4 * 3);
+                currentFrame = 0;
+                restartFlag = false;
+            }
+
 
             // Stop buffering
             if (imageBuffers.size() == 0)
@@ -148,7 +204,7 @@ public class VideoDecoder {
             int[] rawImage = imageBuffers.remove();
 
             lastFrame.loadFrom(inputStream);
-            lastFrame = lastFrame.reconstruct(foregroundQuantizationValue, backgroundQuantizationValue);
+            lastFrame = lastFrame.reconstruct(foregroundQuantizationValue, backgroundQuantizationValue, pointerX, pointerY);
             lastFrame.getRawImage(rawImage);
 
             imgs.add(rawImage);
@@ -186,7 +242,7 @@ public class VideoDecoder {
             }
 
             CompletableFuture<SegmentedFrame> current = CompletableFuture.completedFuture(new SegmentedFrame(height, width, inputStream));
-            lastFrame = lastFrame.thenCombineAsync(current, (last, curr) -> curr.reconstruct(foregroundQuantizationValue, backgroundQuantizationValue));
+            lastFrame = lastFrame.thenCombineAsync(current, (last, curr) -> curr.reconstruct(foregroundQuantizationValue, backgroundQuantizationValue, pointerX, pointerY));
 
             outputFuture.thenAcceptBoth(lastFrame, (o, last) -> {
                 try {
@@ -204,6 +260,48 @@ public class VideoDecoder {
         outputFuture.join();
         outputStream.close();
     }
+
+    /*=============================================================================
+    * ============================= Action Listeners ==============================
+    * =============================================================================
+    */
+
+    public void playOrPauseVideo() {
+        if(videostatus==1) {
+            timer.stop();
+            videostatus = 0;
+        }
+        else {
+            timer.start();
+            videostatus = 1;
+        }
+    }
+
+
+    public void actionPerformed (ActionEvent e) {
+        Object src = e.getSource();
+        if (src == playpause) {
+            playOrPauseVideo();
+        }
+        else if (src == restart) {
+            restartFlag = true;
+        }
+    }
+
+    public void mouseMoved(MouseEvent e) {
+        this.pointerX = e.getX();
+        this.pointerY = e.getY();
+    }
+
+    public void mouseDragged(MouseEvent e) {
+
+    }
+
+    public void updateSlider() {
+        seekBar.setValue(currentFrame);
+    }
+
+
 
 
     public static void main(String[] argv) {

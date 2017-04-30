@@ -28,7 +28,8 @@ public class Macroblock {
         this.x = x;
         this.y = y;
         this.index = blockIndex;
-        this.motionVector = new MotionVector(0,0);
+//        this.motionVector = new MotionVector(0,0);
+        this.motionVector = null;
     }
 
     public int getLayer() {
