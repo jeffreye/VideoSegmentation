@@ -40,6 +40,8 @@ public class SegmentedFrame extends Frame {
     }
 
     public SegmentedFrame setData(){
+        for(Macroblock mb : macroblocks)
+            mb.setMotionVector(null);
         this.dctValues = new float[getDctValueSize(height, width)][64];
         forwardDCT(imageY, imageU, imageV, dctValues);
         return this;
@@ -69,6 +71,9 @@ public class SegmentedFrame extends Frame {
 
 
     public boolean loadFrom(FileChannel inputStream) throws IOException {
+        for(Macroblock mb : macroblocks)
+            mb.setMotionVector(null);
+
         long startPos = inputStream.position();
         byteBuffer.clear();
         byteBuffer.limit(macroblocks.length * 4);
