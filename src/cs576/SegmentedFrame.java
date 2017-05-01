@@ -23,7 +23,7 @@ public class SegmentedFrame extends Frame {
      * motion vectors that are related to last frame
      */
     private ArrayList<Macroblock> motionVectors;
-
+    private int MACROBLOCK_SEARCH = 64;
     private float[][] dctValues;
 
     ByteBuffer byteBuffer;
@@ -140,7 +140,7 @@ public class SegmentedFrame extends Frame {
                         macroblocks[blockIndex].isBackgroundLayer() ?
                                 backgroundQuantizationValue :
                                 foregroundQuantizationValue;
-                if(dist2(macroblocks[blockIndex].getX(),macroblocks[blockIndex].getY(),pointerX-32, pointerY-32)<4096){
+                if(macroblocks[blockIndex].dist2(pointerX-MACROBLOCK_SEARCH/2, pointerY-MACROBLOCK_SEARCH/2)<MACROBLOCK_SEARCH*MACROBLOCK_SEARCH){
                     quantizationValue = 1;
                 }
                 for (int k = 0; k < 3; k++) {
