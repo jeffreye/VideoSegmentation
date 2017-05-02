@@ -77,7 +77,7 @@ public class VideoDecoder implements ActionListener, MouseMotionListener {
         showWindow(fps, frameNumbers);
 
         // Allocate buffers
-        for (int i = 0; i < 10; i++) {
+        for (int i = 0; i < 8; i++) {
             imageBuffers.add(new int[height * width]);
         }
     }
@@ -137,12 +137,10 @@ public class VideoDecoder implements ActionListener, MouseMotionListener {
 
             try {
                 currentFrame = seekBar.getValue();
-                long pos = framePositions.get(seekBar.getValue());
-                if (inputStream.position() != pos) {
-                    while (!imgs.isEmpty())
-                        imageBuffers.add(imgs.remove());
-                    inputStream.position(pos);
-                }
+                long pos = framePositions.get(currentFrame);
+                while (!imgs.isEmpty())
+                    imageBuffers.add(imgs.remove());
+                inputStream.position(pos);
             } catch (IOException e1) {
                 e1.printStackTrace();
             }
@@ -170,6 +168,9 @@ public class VideoDecoder implements ActionListener, MouseMotionListener {
     private void refreshImage() {
         // Video is buffering
         if (imgs.size() == 0)
+            return;
+
+        if (seekBar.getValueIsAdjusting())
             return;
 
         currentFrame++;
