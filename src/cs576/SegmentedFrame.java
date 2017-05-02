@@ -22,7 +22,6 @@ public class SegmentedFrame extends Frame {
      * motion vectors that are related to last frame
      */
     private ArrayList<Macroblock> motionVectors;
-    private int MACROBLOCK_SEARCH = 64;
     private float[][] dctValues;
 
     ByteBuffer byteBuffer;
@@ -38,15 +37,15 @@ public class SegmentedFrame extends Frame {
         byteBuffer = ByteBuffer.allocateDirect(getDctValueSize(height, width) * 64 * 4);
     }
 
-    public SegmentedFrame setData(){
-        for(Macroblock mb : macroblocks)
+    public SegmentedFrame setData() {
+        for (Macroblock mb : macroblocks)
             mb.setMotionVector(null);
         this.dctValues = new float[getDctValueSize(height, width)][64];
         forwardDCT(imageY, imageU, imageV, dctValues);
         return this;
     }
 
-    public SegmentedFrame setData(byte[] imageBuffer){
+    public SegmentedFrame setData(byte[] imageBuffer) {
         convertToYUV(imageBuffer, height, width, imageY, imageU, imageV);
         return setData();
     }
@@ -57,7 +56,7 @@ public class SegmentedFrame extends Frame {
 
         float[][] previousY = referenceFrame.imageY;
         previousY = referenceFrame.imageY;
-        if (referenceFrame!=null) {
+        if (referenceFrame != null) {
 //            if (referenceFrame.referenceFrame != null) {
 //                previousY = referenceFrame.referenceFrame.imageY;
 //                if (referenceFrame.referenceFrame.referenceFrame != null) {
@@ -72,7 +71,7 @@ public class SegmentedFrame extends Frame {
 //                }
 //            }
         }
-        computeMotionVectors(searchRange,previousY);
+        computeMotionVectors(searchRange, previousY);
 
         groupRegions();
 
@@ -88,7 +87,7 @@ public class SegmentedFrame extends Frame {
 
 
     public boolean loadFrom(FileChannel inputStream) throws IOException {
-        for(Macroblock mb : macroblocks)
+        for (Macroblock mb : macroblocks)
             mb.setMotionVector(null);
 
         long startPos = inputStream.position();
@@ -140,15 +139,15 @@ public class SegmentedFrame extends Frame {
         }
 
 
-
         return true;
     }
 
-    public SegmentedFrame reconstruct(int foregroundQuantizationValue, int backgroundQuantizationValue){
-        return reconstruct(foregroundQuantizationValue,backgroundQuantizationValue,-1,-1);
+    public SegmentedFrame reconstruct() {
+        inverseDCT(dctValues, this.imageY, this.imageU, this.imageV);
+        return this;
     }
 
-    public SegmentedFrame reconstruct(int foregroundQuantizationValue, int backgroundQuantizationValue, int pointerX, int pointerY) {
+    public SegmentedFrame reconstruct(int foregroundQuantizationValue, int backgroundQuantizationValue) {
 
         // Quantize and Dequantize
         int blockIndex;
@@ -158,36 +157,23 @@ public class SegmentedFrame extends Frame {
             for (int j = 0; j < width; j += DCT_BLOCK_LENGTH) {
                 blockIndex = i / MACROBLOCK_LENGTH * macroblockWidth + j / MACROBLOCK_LENGTH;
 
+                int quantizationValue =
+                        macroblocks[blockIndex].isBackgroundLayer() ?
+                                backgroundQuantizationValue :
+                                foregroundQuantizationValue;
 
-                if (pointerX != -1 && pointerY != -1 &&
-                        macroblocks[blockIndex].dist2(pointerX - MACROBLOCK_SEARCH / 2, pointerY - MACROBLOCK_SEARCH / 2) < MACROBLOCK_SEARCH/2) {
-                    // No quantization in this block
-                    dctIndex += 3;
-                } else {
-
-                    int quantizationValue =
-                            macroblocks[blockIndex].isBackgroundLayer() ?
-                                    backgroundQuantizationValue :
-                                    foregroundQuantizationValue;
-
-                    for (int k = 0; k < 3; k++) {
-                        quantize(dctValues[dctIndex], quantizationValue);
-                        dequantize(dctValues[dctIndex], quantizationValue);
-                        dctIndex++;
-                    }
-
+                for (int k = 0; k < 3; k++) {
+                    quantize(dctValues[dctIndex], quantizationValue);
+                    dequantize(dctValues[dctIndex], quantizationValue);
+                    dctIndex++;
                 }
 
             }
         }
 
-        assert dctIndex == dctValues.length;
-
         inverseDCT(dctValues, this.imageY, this.imageU, this.imageV);
         return this;
     }
-
-    static final ThreadLocal<float[][]> threadedBlockSum = new ThreadLocal<>();
 
     /**
      * Compute motion vectors using block based SAD(sum of absolute difference brute search)
@@ -197,32 +183,7 @@ public class SegmentedFrame extends Frame {
      */
     private void computeMotionVectors(int k, float[][] previousY) {
 
-        float[][] blockSums = threadedBlockSum.get();
-        if (blockSums == null){
-            blockSums = new float[height][width];
-            threadedBlockSum.set(blockSums);
-        }
-
-        for (int i = 0; i < height; i++) {
-            for (int j = 0; j < width; j++) {
-
-                int right = j + MACROBLOCK_LENGTH - 1;
-                int bottom = i + MACROBLOCK_LENGTH - 1;
-                if (bottom >= height || right >= width)
-                    continue;
-
-                float s = 0;
-                for (int y = i; y <= bottom; y++) {
-                    for (int x = j; x <= right; x++) {
-                        if (y >= height || x >= width)
-                            continue;
-                        s += previousY[y][x];
-                    }
-                }
-
-                blockSums[i][j] = s;
-            }
-        }
+        float[][] blockSums = calcualteBlockSums(previousY);
 
         for (Macroblock b1 : this.getBlocks()) {
 
@@ -282,23 +243,68 @@ public class SegmentedFrame extends Frame {
                 // TODO: no matching block
 //                System.err.println("no matching block found");
             } else if (deltaX == 0 && deltaY == 0) {
-//                b1.vectorCount+=1;
-                if (b1.getMotionVector()==null) {
-                    b1.setMotionVector(new MotionVector(0, 0));
-                    motionVectors.add(b1);
-                }
-
+                b1.setMotionVector(new MotionVector(0, 0));
+                motionVectors.add(b1);
             } else {
-//                b1.vectorCount+=1;
-                if (b1.getMotionVector()==null) {
-                    b1.setMotionVector(new MotionVector(deltaX, deltaY));
-                    motionVectors.add(b1);
-                }
-                else{
-                    b1.getMotionVector().add(deltaX,deltaY);
-                }
+                b1.setMotionVector(new MotionVector(deltaX, deltaY));
+                motionVectors.add(b1);
             }
         }
+    }
+
+
+    static final ThreadLocal<float[][]> threadedBlockSum = new ThreadLocal<>();
+    static final ThreadLocal<float[][]> threadedRowSum = new ThreadLocal<>();
+
+    private float[][] calcualteBlockSums(float[][] previousY) {
+        int height = this.height - MACROBLOCK_LENGTH + 1;
+        int width = this.width - MACROBLOCK_LENGTH + 1;
+
+
+        float[][] rowSums = threadedRowSum.get();
+        if (rowSums == null) {
+            rowSums = new float[this.height][this.width];
+            threadedRowSum.set(rowSums);
+        }
+
+        float[][] blockSums = threadedBlockSum.get();
+        if (blockSums == null) {
+            blockSums = new float[height][width];
+            threadedBlockSum.set(blockSums);
+        }
+
+        // Rows
+        for (int i = 0; i < height; i++) {
+            float s = 0;
+            for (int j = 0; j < MACROBLOCK_LENGTH; j++)
+                s += previousY[i][j];
+
+            rowSums[i][0] = s;
+
+            for (int j = 1; j < width; j++) {
+                s -= previousY[i][j - 1];
+                s += previousY[i][j - 1 + MACROBLOCK_LENGTH];
+                rowSums[i][j] = s;
+            }
+        }
+
+        // Columns
+        for (int j = 0; j < width; j++) {
+
+            float s = 0;
+            for (int i = 0; i < MACROBLOCK_LENGTH; i++)
+                s += rowSums[i][j];
+            blockSums[0][j] = s;
+
+            for (int i = 1; i < height; i++) {
+                s -= rowSums[i - 1][j];
+                s += rowSums[i - 1 + MACROBLOCK_LENGTH][j];
+                blockSums[i][j] = s;
+            }
+
+        }
+
+        return blockSums;
     }
 
     /**
@@ -1037,7 +1043,7 @@ public class SegmentedFrame extends Frame {
         int NUM_LAYERS = 8; //Number of layers to divide the vectors into
 
 //        double tolerantRate=0; //more foreground when larger, can be negative
-        double bgMinRadius=2; //more background when larger, should be positive, originally set to 3, I have had good results with 2
+        double bgMinRadius = 2; //more background when larger, should be positive, originally set to 3, I have had good results with 2
         double BACKGROUND_ENFORCED_RADIUS = 3; //more background when larger, should be positive, less aggressive then bgMinRadius
         double BACKGROUND_ENFORCED_FACTOR = 1; //more background when larger, should be positive, around 1
         int BACKGROUND_COUNT_TOLERANCE = 3; //Originally set to 3
@@ -1055,7 +1061,7 @@ public class SegmentedFrame extends Frame {
         int[] totalX = new int[NUM_LAYERS];
         int[] totalY = new int[NUM_LAYERS];
         int[] layerCount = new int[NUM_LAYERS];
-        for (int i =0;i<NUM_LAYERS;i++){
+        for (int i = 0; i < NUM_LAYERS; i++) {
             centroidsX[i] = 0;
             centroidsY[i] = 0;
             totalX[i] = 0;
@@ -1085,9 +1091,9 @@ public class SegmentedFrame extends Frame {
 
         int thislayer;
         //clustering
-        boolean changed=true;
-        while (changed){
-            changed=false;
+        boolean changed = true;
+        while (changed) {
+            changed = false;
 
             //assigning
             for (Macroblock eachBlock : macroblocks) {
@@ -1096,9 +1102,9 @@ public class SegmentedFrame extends Frame {
                     //get recentCentroid value
                     double minDist = eachBlock.getMotionVector().getDistance2(centroidsX[originalLayer], centroidsY[originalLayer]);
                     double thisDist;
-                    for (int i =0;i<NUM_LAYERS;i++){
+                    for (int i = 0; i < NUM_LAYERS; i++) {
                         thisDist = eachBlock.getMotionVector().getDistance2(centroidsX[i], centroidsY[i]);
-                        if(thisDist<minDist){
+                        if (thisDist < minDist) {
                             minDist = thisDist;
                             eachBlock.setReferenceLayer(i);
                         }
@@ -1120,12 +1126,11 @@ public class SegmentedFrame extends Frame {
                 }
             }
 
-            for (int i =0;i<NUM_LAYERS;i++){
-                if(layerCount[i] == 0){
+            for (int i = 0; i < NUM_LAYERS; i++) {
+                if (layerCount[i] == 0) {
                     centroidsX[i] = -99999;
                     centroidsY[i] = -99999;
-                }
-                else {
+                } else {
                     centroidsX[i] = totalX[i] / layerCount[i];
                     centroidsY[i] = totalY[i] / layerCount[i];
                 }
@@ -1134,7 +1139,7 @@ public class SegmentedFrame extends Frame {
         }
 
         //find out background layer cluster
-        for (int i =0;i<NUM_LAYERS;i++){
+        for (int i = 0; i < NUM_LAYERS; i++) {
             layerCount[i] = 0;
         }
 
@@ -1146,14 +1151,14 @@ public class SegmentedFrame extends Frame {
 
         int max = layerCount[0];
         int maxlayer = 0;
-        for (int i =0;i<NUM_LAYERS;i++){
-            if(layerCount[i]>max){
+        for (int i = 0; i < NUM_LAYERS; i++) {
+            if (layerCount[i] > max) {
                 max = layerCount[i];
                 maxlayer = i;
             }
         }
 
-        if(maxlayer != 0){
+        if (maxlayer != 0) {
             for (Macroblock eachBlock : macroblocks) {
                 if (eachBlock.getMotionVector() != null) {
                     if (eachBlock.getReferenceLayer() == 0) {
@@ -1167,11 +1172,11 @@ public class SegmentedFrame extends Frame {
 
 
         //re-clustering
-        changed=true;
-        while (changed){
-            changed=false;
+        changed = true;
+        while (changed) {
+            changed = false;
             //reset values
-            for (int i =0;i<NUM_LAYERS;i++){
+            for (int i = 0; i < NUM_LAYERS; i++) {
                 centroidsX[i] = 0;
                 centroidsY[i] = 0;
                 totalX[i] = 0;
@@ -1189,12 +1194,11 @@ public class SegmentedFrame extends Frame {
                 }
             }
 
-            for (int i =0;i<NUM_LAYERS;i++){
-                if(layerCount[i] == 0){
+            for (int i = 0; i < NUM_LAYERS; i++) {
+                if (layerCount[i] == 0) {
                     centroidsX[i] = -99999;
                     centroidsY[i] = -99999;
-                }
-                else {
+                } else {
                     centroidsX[i] = totalX[i] / layerCount[i];
                     centroidsY[i] = totalY[i] / layerCount[i];
                 }
@@ -1207,10 +1211,9 @@ public class SegmentedFrame extends Frame {
                     //get recentCentroid value
                     double minDist = eachBlock.getMotionVector().getDistance2(centroidsX[originalLayer], centroidsY[originalLayer]);
                     double thisDist;
-                    if (eachBlock.getMotionVector().getDistance2(centroidsX[0], centroidsY[0])<BACKGROUND_ENFORCED_RADIUS){
+                    if (eachBlock.getMotionVector().getDistance2(centroidsX[0], centroidsY[0]) < BACKGROUND_ENFORCED_RADIUS) {
                         eachBlock.setReferenceLayer(0);
-                    }
-                    else {
+                    } else {
                         for (int i = 0; i < NUM_LAYERS; i++) {
                             thisDist = eachBlock.getMotionVector().getDistance2(centroidsX[i], centroidsY[i]);
                             if (thisDist < minDist) {
@@ -1227,9 +1230,9 @@ public class SegmentedFrame extends Frame {
         }
 
         //remove foreground layers that are probably background
-        int presentNum_Layers=0;
-        for (int i =0;i<NUM_LAYERS;i++){
-            if(layerCount[i] !=0){
+        int presentNum_Layers = 0;
+        for (int i = 0; i < NUM_LAYERS; i++) {
+            if (layerCount[i] != 0) {
                 presentNum_Layers++;
             }
             layerCount[i] = 0;
@@ -1240,10 +1243,10 @@ public class SegmentedFrame extends Frame {
                 layerCount[thislayer]++;
             }
         }
-        for (int i =1;i<NUM_LAYERS;i++){
-            if (layerCount[i]>960*540/256/(NUM_LAYERS*BACKGROUND_ENFORCED_FACTOR)){
+        for (int i = 1; i < NUM_LAYERS; i++) {
+            if (layerCount[i] > 960 * 540 / 256 / (NUM_LAYERS * BACKGROUND_ENFORCED_FACTOR)) {
                 for (Macroblock eachBlock : macroblocks) {
-                    if (eachBlock.getReferenceLayer()==i) {
+                    if (eachBlock.getReferenceLayer() == i) {
                         eachBlock.setReferenceLayer(0);
                     }
                 }
@@ -1264,8 +1267,8 @@ public class SegmentedFrame extends Frame {
 
         //Decide layers
         for (Macroblock eachBlock : macroblocks) {
-            int bgCount=0;
-            if (referenceFrame!=null&&eachBlock.getReferenceLayer()==0) {
+            int bgCount = 0;
+            if (referenceFrame != null && eachBlock.getReferenceLayer() == 0) {
                 bgCount++;
                 if (referenceFrame.referenceFrame != null && referenceFrame.getBlock(eachBlock.getBlockIndex()).getReferenceLayer() == 0) {
                     bgCount++;
@@ -1280,13 +1283,11 @@ public class SegmentedFrame extends Frame {
                     }
                 }
             }
-            if (bgCount>BACKGROUND_COUNT_TOLERANCE){
+            if (bgCount > BACKGROUND_COUNT_TOLERANCE) {
                 eachBlock.setLayer(0);
-            }
-            else if(bgCount<FOREGROUND_COUNT_TOLERANCE){
+            } else if (bgCount < FOREGROUND_COUNT_TOLERANCE) {
                 eachBlock.setLayer(1);
-            }
-            else{
+            } else {
                 eachBlock.setLayer(eachBlock.getReferenceLayer());
             }
         }

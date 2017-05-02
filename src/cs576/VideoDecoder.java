@@ -20,6 +20,41 @@ import java.util.Queue;
  */
 public class VideoDecoder implements ActionListener, MouseMotionListener {
 
+    private static final int MACROBLOCK_SEARCH = 64;
+
+    class ImagePair {
+        private final int width;
+        private final int height;
+        int[] original;
+        int[] quantized;
+
+        public ImagePair(int width, int height) {
+            this.width = width;
+            this.height = height;
+            this.original = new int[3 * height * width];
+            this.quantized = new int[3 * height * width];
+        }
+
+        public int[] blend(int mouseX, int mouseY) {
+
+            int left = Math.max(0, mouseX - MACROBLOCK_SEARCH / 2);
+            int right = Math.min(width, mouseX + MACROBLOCK_SEARCH / 2);
+
+            int top = Math.max(0, mouseY - MACROBLOCK_SEARCH / 2);
+            int bottom = Math.min(height, mouseY + MACROBLOCK_SEARCH / 2);
+
+            for (int i = top; i < bottom; i++) {
+                for (int j = left; j < right; j++) {
+                    quantized[i * width + j] = original[i * width + j];
+                    quantized[i * width + j + 1 * height * width] = original[i * width + j + 1 * height * width];
+                    quantized[i * width + j + 2 * height * width] = original[i * width + j + 2 * height * width];
+                }
+            }
+
+            return quantized;
+        }
+    }
+
     private final int foregroundQuantizationValue;
     private final int backgroundQuantizationValue;
     private final boolean gazeControl;
@@ -41,8 +76,8 @@ public class VideoDecoder implements ActionListener, MouseMotionListener {
     private JButton playpause;
     private JButton restart;
     private JSlider seekBar;
-    private Queue<int[]> imgs;
-    private Queue<int[]> imageBuffers;
+    private Queue<ImagePair> nextFrames;
+    private Queue<ImagePair> imageBuffers;
     private Timer timer;
 
     public VideoDecoder(String inputFile, int foregroundQuantizationValue, int backgroundQuantizationValue, boolean gazeControl, int fps) throws IOException {
@@ -55,7 +90,7 @@ public class VideoDecoder implements ActionListener, MouseMotionListener {
         this.currentFrame = 0;
         this.pointerX = 0;
         this.pointerY = 0;
-        this.imgs = new ArrayDeque<>(10);
+        this.nextFrames = new ArrayDeque<>(10);
         this.imageBuffers = new ArrayDeque<>(10);
 
         ByteBuffer buffer = ByteBuffer.allocateDirect(3 * 4);
@@ -78,22 +113,23 @@ public class VideoDecoder implements ActionListener, MouseMotionListener {
 
         // Allocate buffers
         for (int i = 0; i < 8; i++) {
-            imageBuffers.add(new int[height * width]);
+            imageBuffers.add(new ImagePair(width, height));
         }
     }
 
 
     public void showWindow(int fps, int frameNumbers) {
         frame = new JFrame();
+
         GridBagLayout gLayout = new GridBagLayout();
         frame.getContentPane().setLayout(gLayout);
         String result = String.format("Video height: %d, width: %d", height, width);
         lbText1 = new JLabel(result);
         lbText1.setHorizontalAlignment(SwingConstants.CENTER);
-        frame.addMouseMotionListener(this);
         lbIm1 = new JLabel();
         image = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
         lbIm1.setIcon(new ImageIcon(image));
+        lbIm1.addMouseMotionListener(this);
 
         GridBagConstraints c = new GridBagConstraints();
         c.fill = GridBagConstraints.HORIZONTAL;
@@ -138,8 +174,8 @@ public class VideoDecoder implements ActionListener, MouseMotionListener {
             try {
                 currentFrame = seekBar.getValue();
                 long pos = framePositions.get(currentFrame);
-                while (!imgs.isEmpty())
-                    imageBuffers.add(imgs.remove());
+                while (!nextFrames.isEmpty())
+                    imageBuffers.add(nextFrames.remove());
                 inputStream.position(pos);
             } catch (IOException e1) {
                 e1.printStackTrace();
@@ -167,7 +203,7 @@ public class VideoDecoder implements ActionListener, MouseMotionListener {
 
     private void refreshImage() {
         // Video is buffering
-        if (imgs.size() == 0)
+        if (nextFrames.size() == 0)
             return;
 
         if (seekBar.getValueIsAdjusting())
@@ -177,11 +213,12 @@ public class VideoDecoder implements ActionListener, MouseMotionListener {
         updateSlider();
 
         // Slider position changed
-        if (imgs.size() == 0)
+        if (nextFrames.size() == 0)
             return;
 
-        int[] buffer = imgs.remove();
-        imageBuffers.add(buffer);
+        ImagePair frame = nextFrames.remove();
+        int[] buffer = gazeControl ? frame.blend(pointerX, pointerY) : frame.quantized;
+        imageBuffers.add(frame);
 
         image.getRaster().setDataElements(0, 0, width, height, buffer);
         lbIm1.repaint();
@@ -208,17 +245,19 @@ public class VideoDecoder implements ActionListener, MouseMotionListener {
 
 //            final long startTime = System.nanoTime();
 
-            int[] rawImage = imageBuffers.remove();
+            ImagePair rawImage = imageBuffers.remove();
 
             lastFrame.loadFrom(inputStream);
-            if (gazeControl)
-                lastFrame = lastFrame.reconstruct(foregroundQuantizationValue, backgroundQuantizationValue, pointerX, pointerY);
-            else
-                lastFrame = lastFrame.reconstruct(foregroundQuantizationValue, backgroundQuantizationValue);
 
-            lastFrame.getRawImage(rawImage);
+            if (gazeControl) {
+                lastFrame.reconstruct();
+                lastFrame.getRawImage(rawImage.original);
+            }
 
-            imgs.add(rawImage);
+            lastFrame.reconstruct(foregroundQuantizationValue, backgroundQuantizationValue);
+            lastFrame.getRawImage(rawImage.quantized);
+
+            nextFrames.add(rawImage);
 
             // End timer
 //            final long endTime = System.nanoTime();
