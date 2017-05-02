@@ -1,5 +1,7 @@
 package cs576;
 
+import static java.lang.Math.pow;
+
 /**
  * Created by Jeffreye on 4/2/2017.
  */
@@ -25,6 +27,10 @@ public class Macroblock {
         this.y = y;
         this.index = blockIndex;
         this.motionVector = null;
+    }
+
+    public int dist2(int x, int y){
+        return (int)(pow(this.x-x,2) + pow(this.y-y,2));
     }
 
     public int getLayer() {

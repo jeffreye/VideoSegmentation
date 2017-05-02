@@ -299,9 +299,7 @@ public class Utils {
         return dctHeight * dctWidth * 3;
     }
 
-    public static int dist2(int x1, int y1, int x2, int y2){
-        return (int)(pow(x2-x1,2) + pow(y2-y1,2));
-    }
+
 
     public static void inverseDCTAndDequantize(byte[][] acValues, int[] dcValues, int height, int width, float[][] imageY, float[][] imageU, float[][] imageV) {
         // Calculate IDCT values
