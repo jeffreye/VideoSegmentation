@@ -144,8 +144,13 @@ public class SegmentedFrame extends Frame {
         return true;
     }
 
+    public SegmentedFrame reconstruct(int foregroundQuantizationValue, int backgroundQuantizationValue){
+        return reconstruct(foregroundQuantizationValue,backgroundQuantizationValue,-1,-1);
+    }
+
     public SegmentedFrame reconstruct(int foregroundQuantizationValue, int backgroundQuantizationValue, int pointerX, int pointerY) {
 
+        // Quantize and Dequantize
         int blockIndex;
         int macroblockWidth = 1 + (width - 1) / MACROBLOCK_LENGTH;
         int dctIndex = 0;
@@ -153,17 +158,24 @@ public class SegmentedFrame extends Frame {
             for (int j = 0; j < width; j += DCT_BLOCK_LENGTH) {
                 blockIndex = i / MACROBLOCK_LENGTH * macroblockWidth + j / MACROBLOCK_LENGTH;
 
-                int quantizationValue =
-                        macroblocks[blockIndex].isBackgroundLayer() ?
-                                backgroundQuantizationValue :
-                                foregroundQuantizationValue;
-                if(macroblocks[blockIndex].dist2(pointerX-MACROBLOCK_SEARCH/2, pointerY-MACROBLOCK_SEARCH/2)<MACROBLOCK_SEARCH*MACROBLOCK_SEARCH){
-                    quantizationValue = 1;
-                }
-                for (int k = 0; k < 3; k++) {
-                    quantize(dctValues[dctIndex], quantizationValue);
-                    dequantize(dctValues[dctIndex], quantizationValue);
-                    dctIndex++;
+
+                if (pointerX != -1 && pointerY != -1 &&
+                        macroblocks[blockIndex].dist2(pointerX - MACROBLOCK_SEARCH / 2, pointerY - MACROBLOCK_SEARCH / 2) < MACROBLOCK_SEARCH/2) {
+                    // No quantization in this block
+                    dctIndex += 3;
+                } else {
+
+                    int quantizationValue =
+                            macroblocks[blockIndex].isBackgroundLayer() ?
+                                    backgroundQuantizationValue :
+                                    foregroundQuantizationValue;
+
+                    for (int k = 0; k < 3; k++) {
+                        quantize(dctValues[dctIndex], quantizationValue);
+                        dequantize(dctValues[dctIndex], quantizationValue);
+                        dctIndex++;
+                    }
+
                 }
 
             }

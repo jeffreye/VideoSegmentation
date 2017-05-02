@@ -16,7 +16,7 @@ public class VideoEncoder {
     private String outputFile;
     private int width;
     private int height;
-    private static final int k =12;
+    private static final int k = 12;
 
     private ByteBuffer bytes;
 
@@ -40,13 +40,13 @@ public class VideoEncoder {
     }
 
     public void encode() throws IOException {
+        final long startTime = System.nanoTime();
 
-
-        FileInputStream inputStream = new FileInputStream(inputFile);
+        FileChannel inputStream = new FileInputStream(inputFile).getChannel();
         // Mark first frame as an I frame
-        int frameNumbers = inputStream.available() / (3 * height * width);
+        int frameNumbers = (int) (inputStream.size() / (3 * height * width));
 
-        FileOutputStream outputStream = new FileOutputStream(outputFile);
+        FileChannel outputStream = new FileOutputStream(outputFile).getChannel();
 
 
         ByteBuffer buffer = ByteBuffer.allocateDirect(3 * 4);
@@ -55,25 +55,25 @@ public class VideoEncoder {
         buffer.putInt(frameNumbers);
 
         buffer.flip();
-        outputStream.getChannel().write(buffer);
+        outputStream.write(buffer);
 
-        encodeSync(inputStream.getChannel(), outputStream.getChannel(), frameNumbers);
-
-        inputStream.close();
-        outputStream.close();
-
-    }
-
-    public void encodeSync(FileChannel inputStream, FileChannel outputStream, int frameNumbers) throws IOException {
         int frameCount = 0;
+
+        // Place a holder first
+        ByteBuffer framePositions = ByteBuffer.allocateDirect(frameNumbers * 8);
+        outputStream.write(framePositions);
+        framePositions.clear();
+
         SegmentedFrame prev = new SegmentedFrame(readImage(inputStream), height, width);
+        frameCount++;
+
         while (frameCount < frameNumbers) {
             SegmentedFrame curr = new SegmentedFrame(readImage(inputStream), height, width)
                     .computeDiff(prev, k);
-
-
-            prev.serialize(outputStream);
             frameCount++;
+
+            framePositions.putLong(outputStream.position());
+            prev.serialize(outputStream);
 
             prev = curr;
 
@@ -91,10 +91,25 @@ public class VideoEncoder {
 
         }
 
-        prev.serialize(outputStream);
-        frameCount++;
+        assert inputStream.position() == inputStream.size();
 
+        framePositions.putLong(outputStream.position());
+        prev.serialize(outputStream);
+
+        assert !framePositions.hasRemaining();
+        framePositions.flip();
+        outputStream.position(12);
+        outputStream.write(framePositions);
+
+        inputStream.close();
+        outputStream.close();
         System.out.println("\rDONE");
+
+        // End timer
+        final long endTime = System.nanoTime();
+
+        System.out.printf("\rTime elapsed: %f s\n",
+                (float) (endTime - startTime) / 1e9);
     }
 
 

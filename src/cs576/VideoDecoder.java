@@ -7,30 +7,31 @@ import java.awt.event.ActionListener;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseMotionListener;
 import java.awt.image.BufferedImage;
-import java.io.*;
+import java.io.FileInputStream;
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Queue;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Created by Jeffreye on 4/1/2017.
  */
-public class VideoDecoder implements ActionListener,MouseMotionListener {
+public class VideoDecoder implements ActionListener, MouseMotionListener {
 
-    private static final int BATCH_WORKS = 20;
-    private final String inputFile;
-    private final String outputFile;
     private final int foregroundQuantizationValue;
     private final int backgroundQuantizationValue;
+    private final boolean gazeControl;
     private int width;
     private int height;
     private int pointerX, pointerY;
     private int videostatus;
     private int currentFrame;
     private boolean restartFlag;
+
+    private FileChannel inputStream;
+    private ArrayList<Long> framePositions;
 
 
     private BufferedImage image;
@@ -44,31 +45,45 @@ public class VideoDecoder implements ActionListener,MouseMotionListener {
     private Queue<int[]> imageBuffers;
     private Timer timer;
 
-
-//    int[] rawImage;
-
-    private boolean doneDecoding;
-
-    public VideoDecoder(String inputFile, String outputFile, int foregroundQuantizationValue, int backgroundQuantizationValue, int fps) throws FileNotFoundException {
-        this.inputFile = inputFile;
-        this.outputFile = outputFile;
+    public VideoDecoder(String inputFile, int foregroundQuantizationValue, int backgroundQuantizationValue, boolean gazeControl, int fps) throws IOException {
+        this.inputStream = new FileInputStream(inputFile).getChannel();
         this.foregroundQuantizationValue = foregroundQuantizationValue;
         this.backgroundQuantizationValue = backgroundQuantizationValue;
+        this.gazeControl = gazeControl;
+
         this.videostatus = 1;
         this.currentFrame = 0;
         this.pointerX = 0;
         this.pointerY = 0;
+        this.imgs = new ArrayDeque<>(10);
+        this.imageBuffers = new ArrayDeque<>(10);
 
+        ByteBuffer buffer = ByteBuffer.allocateDirect(3 * 4);
+        inputStream.read(buffer);
+        buffer.flip();
 
-        imgs = new ArrayDeque<>(10);
-//        allImgs = new ArrayList<>(100);
-        imageBuffers = new ArrayDeque<>(10);
-//        img = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
-        showWindow(fps);
+        width = buffer.getInt();
+        height = buffer.getInt();
+        int frameNumbers = buffer.getInt();
+
+        framePositions = new ArrayList<>(frameNumbers);
+        buffer = ByteBuffer.allocateDirect(frameNumbers * 8);
+        inputStream.read(buffer);
+        buffer.flip();
+        for (int i = 0; i < frameNumbers; i++) {
+            framePositions.add(buffer.getLong());
+        }
+
+        showWindow(fps, frameNumbers);
+
+        // Allocate buffers
+        for (int i = 0; i < 10; i++) {
+            imageBuffers.add(new int[height * width]);
+        }
     }
 
 
-    public void showWindow(int fps) {
+    public void showWindow(int fps, int frameNumbers) {
         frame = new JFrame();
         GridBagLayout gLayout = new GridBagLayout();
         frame.getContentPane().setLayout(gLayout);
@@ -77,6 +92,8 @@ public class VideoDecoder implements ActionListener,MouseMotionListener {
         lbText1.setHorizontalAlignment(SwingConstants.CENTER);
         frame.addMouseMotionListener(this);
         lbIm1 = new JLabel();
+        image = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+        lbIm1.setIcon(new ImageIcon(image));
 
         GridBagConstraints c = new GridBagConstraints();
         c.fill = GridBagConstraints.HORIZONTAL;
@@ -112,6 +129,24 @@ public class VideoDecoder implements ActionListener,MouseMotionListener {
         frame.getContentPane().add(restart, c);
 
         seekBar = new JSlider();
+        seekBar.setMinimum(0);
+        seekBar.setMaximum(frameNumbers - 1);
+        seekBar.addChangeListener(e -> {
+            if (!seekBar.getValueIsAdjusting())
+                return;
+
+            try {
+                currentFrame = seekBar.getValue();
+                long pos = framePositions.get(seekBar.getValue());
+                if (inputStream.position() != pos) {
+                    while (!imgs.isEmpty())
+                        imageBuffers.add(imgs.remove());
+                    inputStream.position(pos);
+                }
+            } catch (IOException e1) {
+                e1.printStackTrace();
+            }
+        });
 
         c.fill = GridBagConstraints.HORIZONTAL;
         c.anchor = GridBagConstraints.CENTER;
@@ -123,7 +158,7 @@ public class VideoDecoder implements ActionListener,MouseMotionListener {
         frame.pack();
         frame.setVisible(true);
         frame.setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
-        frame.setExtendedState(JFrame.MAXIMIZED_BOTH);
+//        frame.setExtendedState(JFrame.MAXIMIZED_BOTH);
 
 
         timer = new Timer(1000 / fps, e -> refreshImage());
@@ -133,7 +168,14 @@ public class VideoDecoder implements ActionListener,MouseMotionListener {
 
 
     private void refreshImage() {
+        // Video is buffering
+        if (imgs.size() == 0)
+            return;
 
+        currentFrame++;
+        updateSlider();
+
+        // Slider position changed
         if (imgs.size() == 0)
             return;
 
@@ -142,51 +184,17 @@ public class VideoDecoder implements ActionListener,MouseMotionListener {
 
         image.getRaster().setDataElements(0, 0, width, height, buffer);
         lbIm1.repaint();
-        currentFrame++;
-        updateSlider();
     }
 
     public void decode() throws IOException {
-        FileInputStream inputStream = new FileInputStream(this.inputFile);
-
-        ByteBuffer buffer = ByteBuffer.allocateDirect(3 * 4);
-        inputStream.getChannel().read(buffer);
-        buffer.flip();
-
-        width = buffer.getInt();
-        height = buffer.getInt();
-        int frameNumbers = buffer.getInt();
-        seekBar.setMinimum(0);
-        seekBar.setMaximum(frameNumbers-1);
-        String result = String.format("Video height: %d, width: %d", height, width);
-        lbText1.setText(result);
-
-        image = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
-        lbIm1.setIcon(new ImageIcon(image));
-        frame.pack();
-
-        for (int i = 0; i < 10; i++) {
-            imageBuffers.add(new int[height * width]);
-        }
-
-        decodeSync(inputStream.getChannel(), frameNumbers);
-
-        doneDecoding = true;
-        inputStream.close();
-    }
-
-    public void decodeSync(FileChannel inputStream, int frameNumbers) throws IOException {
         SegmentedFrame lastFrame = new SegmentedFrame(height, width);
         while (true) {
             // Reset to first frame
-
-
             if (inputStream.size() == inputStream.position() || restartFlag) {
-                inputStream.position(4 * 3);
+                inputStream.position(framePositions.get(0));
                 currentFrame = 0;
                 restartFlag = false;
             }
-
 
             // Stop buffering
             if (imageBuffers.size() == 0)
@@ -202,7 +210,11 @@ public class VideoDecoder implements ActionListener,MouseMotionListener {
             int[] rawImage = imageBuffers.remove();
 
             lastFrame.loadFrom(inputStream);
-            lastFrame = lastFrame.reconstruct(foregroundQuantizationValue, backgroundQuantizationValue, pointerX, pointerY);
+            if (gazeControl)
+                lastFrame = lastFrame.reconstruct(foregroundQuantizationValue, backgroundQuantizationValue, pointerX, pointerY);
+            else
+                lastFrame = lastFrame.reconstruct(foregroundQuantizationValue, backgroundQuantizationValue);
+
             lastFrame.getRawImage(rawImage);
 
             imgs.add(rawImage);
@@ -215,73 +227,27 @@ public class VideoDecoder implements ActionListener,MouseMotionListener {
         }
     }
 
-    public void decodeAsync(DataInputStream inputStream, int frameNumbers) throws IOException {
-        int frameCount = 0;
-        CompletableFuture<SegmentedFrame> lastFrame = CompletableFuture.completedFuture(null);
-        CompletableFuture<Void> outputFuture = CompletableFuture.completedFuture(null);
-        AtomicInteger processedInteger = new AtomicInteger(0);
-
-        FileOutputStream outputStream = new FileOutputStream(outputFile);
-
-        while (inputStream.available() != 0) {
-
-
-            if (frameCount % BATCH_WORKS == 0 && lastFrame != null) {
-                while (!lastFrame.isDone()) {
-                    try {
-                        Thread.sleep(1000);
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    }
-                    System.out.print("\r");
-                    System.out.print("Frame " + Integer.toString(processedInteger.get()) + "/" + Integer.toString(frameNumbers) + " Processed.");
-
-                }
-            }
-
-            CompletableFuture<SegmentedFrame> current = CompletableFuture.completedFuture(new SegmentedFrame(height, width, inputStream));
-            lastFrame = lastFrame.thenCombineAsync(current, (last, curr) -> curr.reconstruct(foregroundQuantizationValue, backgroundQuantizationValue, pointerX, pointerY));
-
-            outputFuture.thenAcceptBoth(lastFrame, (o, last) -> {
-                try {
-                    outputStream.write(last.getRawImage());
-                    outputStream.flush();
-                    processedInteger.incrementAndGet();
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-            });
-
-            frameCount++;
-        }
-
-        outputFuture.join();
-        outputStream.close();
-    }
-
     /*=============================================================================
     * ============================= Action Listeners ==============================
     * =============================================================================
     */
 
     public void playOrPauseVideo() {
-        if(videostatus==1) {
+        if (videostatus == 1) {
             timer.stop();
             videostatus = 0;
-        }
-        else {
+        } else {
             timer.start();
             videostatus = 1;
         }
     }
 
 
-    public void actionPerformed (ActionEvent e) {
+    public void actionPerformed(ActionEvent e) {
         Object src = e.getSource();
         if (src == playpause) {
             playOrPauseVideo();
-        }
-        else if (src == restart) {
+        } else if (src == restart) {
             restartFlag = true;
         }
     }
@@ -300,16 +266,14 @@ public class VideoDecoder implements ActionListener,MouseMotionListener {
     }
 
 
-
-
     public static void main(String[] argv) {
-        if (argv.length >= 2 && argv[0].endsWith(".cmp")) {
+        if (argv.length >= 3 && argv[0].endsWith(".cmp")) {
             try {
                 String input = argv[0];
-                String output = input.substring(0, input.length() - 4).concat(".raw");
                 int quantizationForeground = Integer.parseInt(argv[1]);
                 int quantizationBackground = Integer.parseInt(argv[2]);
-                VideoDecoder decoder = new VideoDecoder(input, output, quantizationForeground, quantizationBackground, 30);
+                boolean gazeControl = Integer.parseInt(argv[3]) == 1;
+                VideoDecoder decoder = new VideoDecoder(input, quantizationForeground, quantizationBackground, gazeControl, 30);
                 decoder.decode();
             } catch (Exception e) {
                 e.printStackTrace(System.err);

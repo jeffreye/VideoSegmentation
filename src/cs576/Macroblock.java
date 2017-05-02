@@ -30,7 +30,7 @@ public class Macroblock {
     }
 
     public int dist2(int x, int y){
-        return (int)(pow(this.x-x,2) + pow(this.y-y,2));
+        return Math.max(Math.abs(x-this.x),Math.abs(y-this.y));
     }
 
     public int getLayer() {
