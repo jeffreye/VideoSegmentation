@@ -187,6 +187,8 @@ public class SegmentedFrame extends Frame {
         return this;
     }
 
+    static final ThreadLocal<float[][]> threadedBlockSum = new ThreadLocal<>();
+
     /**
      * Compute motion vectors using block based SAD(sum of absolute difference brute search)
      * or fast motion estimation(FME), and then compute error frame
@@ -195,17 +197,46 @@ public class SegmentedFrame extends Frame {
      */
     private void computeMotionVectors(int k, float[][] previousY) {
 
+        float[][] blockSums = threadedBlockSum.get();
+        if (blockSums == null){
+            blockSums = new float[height][width];
+            threadedBlockSum.set(blockSums);
+        }
+
+        for (int i = 0; i < height; i++) {
+            for (int j = 0; j < width; j++) {
+
+                int right = j + MACROBLOCK_LENGTH - 1;
+                int bottom = i + MACROBLOCK_LENGTH - 1;
+                if (bottom >= height || right >= width)
+                    continue;
+
+                float s = 0;
+                for (int y = i; y <= bottom; y++) {
+                    for (int x = j; x <= right; x++) {
+                        if (y >= height || x >= width)
+                            continue;
+                        s += previousY[y][x];
+                    }
+                }
+
+                blockSums[i][j] = s;
+            }
+        }
+
         for (Macroblock b1 : this.getBlocks()) {
 
             int deltaX = 0, deltaY = 0;
 
             // Same block
             float min = 0;
+            float macroblockSum = 0;
             for (int y = b1.getY(); y <= b1.getY() + MACROBLOCK_LENGTH - 1; y++) {
                 for (int x = b1.getX(); x <= b1.getX() + MACROBLOCK_LENGTH - 1; x++) {
                     if (y >= height || x >= width)
                         continue;
                     min += Math.abs(previousY[y][x] - imageY[y][x]);
+                    macroblockSum += imageY[y][x];
                 }
             }
 
@@ -221,8 +252,11 @@ public class SegmentedFrame extends Frame {
                         int top = b1.getY() + j;
                         int bottom = top + MACROBLOCK_LENGTH - 1;
 
-
                         if (left < 0 || top < 0 || bottom >= height || right >= width)
+                            continue;
+
+                        // Check lower bound
+                        if (Math.abs(macroblockSum - blockSums[top][left]) > min)
                             continue;
 
                         // do macroblock searches only using data of one component, which should be the Y component
