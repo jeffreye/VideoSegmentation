@@ -1,11 +1,11 @@
 package cs576;
 
-import java.io.*;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentSkipListMap;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Created by Jeffreye on 4/1/2017.
@@ -16,7 +16,7 @@ public class VideoEncoder {
     private String outputFile;
     private int width;
     private int height;
-    private static final int k =10;
+    private static final int k =12;
 
     private ByteBuffer bytes;
 
@@ -78,7 +78,7 @@ public class VideoEncoder {
             prev = curr;
 
             // release reference so that GC could collect them
-            final int RESERVED_FRAMES = 10;
+            final int RESERVED_FRAMES = 5;
             SegmentedFrame f = curr;
             for (int i = 0; i < RESERVED_FRAMES && f != null; i++) {
                 f = f.referenceFrame;

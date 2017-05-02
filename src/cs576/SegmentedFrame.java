@@ -57,18 +57,18 @@ public class SegmentedFrame extends Frame {
         this.referenceFrame = referenceFrame;
 
         float[][] previousY = referenceFrame.imageY;
-        computeMotionVectors(searchRange,previousY);
-//        if (referenceFrame!=null)
-//            if(referenceFrame.referenceFrame!=null)
-//                if(referenceFrame.referenceFrame.referenceFrame!=null) {
-//                    previousY = referenceFrame.referenceFrame.referenceFrame.imageY;
-//                    computeMotionVectors(searchRange, previousY);
+//        computeMotionVectors(searchRange,previousY);
+        if (referenceFrame!=null)
+            if(referenceFrame.referenceFrame!=null)
+                if(referenceFrame.referenceFrame.referenceFrame!=null) {
+                    previousY = referenceFrame.referenceFrame.referenceFrame.imageY;
+                    computeMotionVectors(searchRange, previousY);
 //                    if(referenceFrame.referenceFrame.referenceFrame.referenceFrame!=null)
 //                        if(referenceFrame.referenceFrame.referenceFrame.referenceFrame.referenceFrame!=null) {
 //                            previousY = referenceFrame.referenceFrame.referenceFrame.referenceFrame.referenceFrame.imageY;
 //                            computeMotionVectors(searchRange, previousY);
 //                        }
-//                }
+                }
 
         groupRegions();
 
@@ -153,7 +153,7 @@ public class SegmentedFrame extends Frame {
                         macroblocks[blockIndex].isBackgroundLayer() ?
                                 backgroundQuantizationValue :
                                 foregroundQuantizationValue;
-                if(macroblocks[blockIndex].dist2(pointerX-MACROBLOCK_SEARCH/2, pointerY-MACROBLOCK_SEARCH/2)<MACROBLOCK_SEARCH*MACROBLOCK_SEARCH){
+                if(dist2(macroblocks[blockIndex].getX(),macroblocks[blockIndex].getY(),pointerX-32, pointerY-32)<4096){
                     quantizationValue = 1;
                 }
                 for (int k = 0; k < 3; k++) {
@@ -403,8 +403,8 @@ public class SegmentedFrame extends Frame {
 //        }
 
 
-        double bgMinRadius=2; //more background when larger, should be positive
-        double tolerantRate=2; //more foreground when larger, can be negative
+        double bgMinRadius=3; //more background when larger, should be positive
+        double tolerantRate=0; //more foreground when larger, can be negative
 
         //random assigning
         for (Macroblock eachBlock : macroblocks) {

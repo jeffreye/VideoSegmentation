@@ -4,11 +4,16 @@ package cs576;
  * Created by Jeffreye on 4/1/2017.
  */
 public class MotionVector {
-    public final int x, y;
+    public int x, y;
 
     public MotionVector(int x, int y) {
         this.x = x;
         this.y = y;
+    }
+
+    public void add (int a,int b){
+        x+=a;
+        y+=b;
     }
 
     public double getDistance(double x,double y){

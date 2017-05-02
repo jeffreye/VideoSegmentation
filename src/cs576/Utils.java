@@ -1,7 +1,7 @@
 package cs576;
 
-import static java.lang.Math.round;
 import static java.lang.Math.pow;
+import static java.lang.Math.round;
 
 /**
  * Created by Jeffreye on 4/15/2017.
