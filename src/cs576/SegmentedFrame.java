@@ -156,7 +156,7 @@ public class SegmentedFrame extends Frame {
 
 
                 if (pointerX != -1 && pointerY != -1 &&
-                        macroblocks[blockIndex].dist2(pointerX - MACROBLOCK_SEARCH / 2, pointerY - MACROBLOCK_SEARCH / 2) < MACROBLOCK_SEARCH * MACROBLOCK_SEARCH) {
+                        macroblocks[blockIndex].dist2(pointerX - MACROBLOCK_SEARCH / 2, pointerY - MACROBLOCK_SEARCH / 2) < MACROBLOCK_SEARCH/2) {
                     // No quantization in this block
                     dctIndex += 3;
                 } else {
