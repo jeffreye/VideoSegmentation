@@ -8,6 +8,7 @@ import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
 import java.nio.channels.FileChannel;
 import java.util.ArrayList;
+import java.util.concurrent.ThreadLocalRandom;
 
 import static cs576.Macroblock.MACROBLOCK_LENGTH;
 import static cs576.Utils.*;
@@ -57,20 +58,17 @@ public class SegmentedFrame extends Frame {
 
         float[][] previousY = referenceFrame.imageY;
 //        computeMotionVectors(searchRange,previousY);
-        if (referenceFrame!=null) {
-            if (referenceFrame.referenceFrame != null) {
-                previousY = referenceFrame.referenceFrame.imageY;
-                computeMotionVectors(searchRange, previousY);
-//                if (referenceFrame.referenceFrame.referenceFrame != null) {
-//                    if (referenceFrame.referenceFrame.referenceFrame.referenceFrame != null) {
-//                        if (referenceFrame.referenceFrame.referenceFrame.referenceFrame.referenceFrame != null) {
+        if (referenceFrame!=null)
+            if(referenceFrame.referenceFrame!=null)
+                if(referenceFrame.referenceFrame.referenceFrame!=null) {
+                    previousY = referenceFrame.referenceFrame.referenceFrame.imageY;
+                    computeMotionVectors(searchRange, previousY);
+//                    if(referenceFrame.referenceFrame.referenceFrame.referenceFrame!=null)
+//                        if(referenceFrame.referenceFrame.referenceFrame.referenceFrame.referenceFrame!=null) {
 //                            previousY = referenceFrame.referenceFrame.referenceFrame.referenceFrame.referenceFrame.imageY;
 //                            computeMotionVectors(searchRange, previousY);
 //                        }
-//                    }
-//                }
-            }
-        }
+                }
 
         groupRegions();
 
@@ -404,348 +402,179 @@ public class SegmentedFrame extends Frame {
 //            }
 //        }
 
-        //harder way
-        double bgMinRadius=4; //more background when larger, should be positive
+        int NUM_LAYERS = 8; //Number of layers to divide the vectors into
+        double bgMinRadius=2; //more background when larger, should be positive, originally set to 3, I have had good results with 2
         double tolerantRate=0; //more foreground when larger, can be negative
-
-//        //random assigning
-//        for (Macroblock eachBlock : macroblocks) {
-//            int ran = ThreadLocalRandom.current().nextInt(0, 3);
-//            eachBlock.setReferenceLayer(ran);
-//        }
-
-        //initiating
-        double layer0CentroidX=10;
-        double layer0CentroidY=10;
-        double layer0TotalX=0;
-        double layer0TotalY=0;
-        int layer0Count=0;
-
-        double layer1CentroidX=10;
-        double layer1CentroidY=-10;
-        double layer1TotalX=0;
-        double layer1TotalY=0;
-        int layer1Count=0;
-
-        double layer2CentroidX=-10;
-        double layer2CentroidY=10;
-        double layer2TotalX=0;
-        double layer2TotalY=0;
-        int layer2Count=0;
-
-        double layer3CentroidX=-10;
-        double layer3CentroidY=-10;
-        double layer3TotalX=0;
-        double layer3TotalY=0;
-        int layer3Count=0;
-
+        int BACKGROUND_COUNT_TOLERANCE = 3; //Originally set to 3
+        int FOREGROUND_COUNT_TOLERANCE = 2; //Originally set to 1, I have had good results with 2
+        //random assigning
+        for (Macroblock eachBlock : macroblocks) {
+            int ran = ThreadLocalRandom.current().nextInt(0, NUM_LAYERS);
+            eachBlock.setReferenceLayer(ran);
+        }
+        double[] centroidsX = new double[NUM_LAYERS];
+        double[] centroidsY = new double[NUM_LAYERS];
+        int[] totalX = new int[NUM_LAYERS];
+        int[] totalY = new int[NUM_LAYERS];
+        int[] layerCount = new int[NUM_LAYERS];
+        for (int i =0;i<NUM_LAYERS;i++){
+            centroidsX[i] = 0;
+            centroidsY[i] = 0;
+            totalX[i] = 0;
+            totalY[i] = 0;
+            layerCount[i] = 0;
+        }
+        int thislayer;
         //clustering
         boolean changed=true;
         while (changed){
             changed=false;
 
-            //assigning
-            for (Macroblock eachBlock : macroblocks) {
-                if (eachBlock.getMotionVector() != null) {
-                    int originalLayer = eachBlock.getReferenceLayer();
-                    //get recentCentroid value
-                    double recentCentroidX;
-                    double recentCentroidY;
-                    if (eachBlock.getReferenceLayer() == 1) {
-                        recentCentroidX = layer1CentroidX;
-                        recentCentroidY = layer1CentroidY;
-                    } else if (eachBlock.getReferenceLayer() == 2) {
-                        recentCentroidX = layer2CentroidX;
-                        recentCentroidY = layer2CentroidY;
-                    } else if (eachBlock.getReferenceLayer() == 3) {
-                        recentCentroidX = layer3CentroidX;
-                        recentCentroidY = layer3CentroidY;
-                    } else {
-                        recentCentroidX = layer0CentroidX;
-                        recentCentroidY = layer0CentroidY;
-                    }
-
-                    if (eachBlock.getMotionVector().getDistance(recentCentroidX, recentCentroidY) - eachBlock.getMotionVector().getDistance(layer1CentroidX, layer1CentroidY) > 0) {
-                        eachBlock.setReferenceLayer(1);
-                        recentCentroidX = layer1CentroidX;
-                        recentCentroidY = layer1CentroidY;
-                    }
-                    if (eachBlock.getMotionVector().getDistance(recentCentroidX, recentCentroidY) - eachBlock.getMotionVector().getDistance(layer2CentroidX, layer2CentroidY) > 0) {
-                        eachBlock.setReferenceLayer(2);
-                        recentCentroidX = layer2CentroidX;
-                        recentCentroidY = layer2CentroidY;
-                    }
-                    if (eachBlock.getMotionVector().getDistance(recentCentroidX, recentCentroidY) - eachBlock.getMotionVector().getDistance(layer3CentroidX, layer3CentroidY) > 0) {
-                        eachBlock.setReferenceLayer(3);
-                        recentCentroidX = layer3CentroidX;
-                        recentCentroidY = layer3CentroidY;
-                    }
-                    if (eachBlock.getMotionVector().getDistance(recentCentroidX, recentCentroidY) - eachBlock.getMotionVector().getDistance(layer0CentroidX, layer0CentroidY) > 0) {
-                        eachBlock.setReferenceLayer(0);
-                    }
-
-                    if (originalLayer != eachBlock.getReferenceLayer()) {
-                        changed = true;
-                    }
-                }
-            }
             //calculate centroids
             for (Macroblock eachBlock : macroblocks) {
                 if (eachBlock.getMotionVector() != null) {
-                    if (eachBlock.getReferenceLayer() == 1) {
-                        layer1TotalX += eachBlock.getMotionVector().x;
-                        layer1TotalY += eachBlock.getMotionVector().y;
-                        layer1Count++;
-                    } else if (eachBlock.getReferenceLayer() == 2) {
-                        layer2TotalX += eachBlock.getMotionVector().x;
-                        layer2TotalY += eachBlock.getMotionVector().y;
-                        layer2Count++;
-                    } else if (eachBlock.getReferenceLayer() == 3) {
-                        layer3TotalX += eachBlock.getMotionVector().x;
-                        layer3TotalY += eachBlock.getMotionVector().y;
-                        layer3Count++;
-                    } else {
-                        layer0TotalX += eachBlock.getMotionVector().x;
-                        layer0TotalY += eachBlock.getMotionVector().y;
-                        layer0Count++;
-                    }
+                    thislayer = eachBlock.getReferenceLayer();
+                    totalX[thislayer] += eachBlock.getMotionVector().x;
+                    totalY[thislayer] += eachBlock.getMotionVector().y;
+                    layerCount[thislayer]++;
                 }
             }
-            layer0CentroidX=layer0TotalX/layer0Count;
-            layer0CentroidY=layer0TotalY/layer0Count;
-            layer1CentroidX=layer1TotalX/layer1Count;
-            layer1CentroidY=layer1TotalY/layer1Count;
-            layer2CentroidX=layer2TotalX/layer2Count;
-            layer2CentroidY=layer2TotalY/layer2Count;
-            layer3CentroidX=layer3TotalX/layer3Count;
-            layer3CentroidY=layer3TotalY/layer3Count;
-        }
-        //find out background layer cluster
-        layer0Count=0;
-        layer1Count=0;
-        layer2Count=0;
-        layer3Count=0;
-        for (Macroblock eachBlock : macroblocks) {
-            if (eachBlock.getMotionVector() != null) {
-                if (eachBlock.getReferenceLayer() == 1) {
-                    layer1Count++;
-                } else if (eachBlock.getReferenceLayer() == 2) {
-                    layer2Count++;
-                } else if (eachBlock.getReferenceLayer() == 3) {
-                    layer3Count++;
-                } else if (eachBlock.getReferenceLayer() == 0){
-                    layer0Count++;
-                }
-            }
-        }
-        //if layer1 is background layer, switch it with layer0
-        if (Math.max(Math.max(Math.max(layer1Count,layer2Count),layer3Count),layer0Count)==layer1Count){
-            for (Macroblock eachBlock : macroblocks) {
-                if (eachBlock.getMotionVector() != null) {
-                    if (eachBlock.getReferenceLayer() == 0) {
-                        eachBlock.setReferenceLayer(1);
-                    } else if (eachBlock.getReferenceLayer() == 1) {
-                        eachBlock.setReferenceLayer(0);
-                    }
-                }
-            }
-        }
-        //if layer2 is background layer, switch it with layer0
-        else if (Math.max(Math.max(Math.max(layer1Count,layer2Count),layer3Count),layer0Count)==layer2Count){
-            for (Macroblock eachBlock : macroblocks) {
-                if (eachBlock.getMotionVector() != null) {
-                    if (eachBlock.getReferenceLayer() == 0) {
-                        eachBlock.setReferenceLayer(2);
-                    } else if (eachBlock.getReferenceLayer() == 2) {
-                        eachBlock.setReferenceLayer(0);
-                    }
-                }
-            }
-        }
-        //if layer3 is background layer, switch it with layer0
-        else if (Math.max(Math.max(Math.max(layer1Count,layer2Count),layer3Count),layer0Count)==layer3Count){
-            for (Macroblock eachBlock : macroblocks) {
-                if (eachBlock.getMotionVector() != null) {
-                    if (eachBlock.getReferenceLayer() == 0) {
-                        eachBlock.setReferenceLayer(3);
-                    } else if (eachBlock.getReferenceLayer() == 3) {
-                        eachBlock.setReferenceLayer(0);
-                    }
-                }
-            }
-        }
 
-        //re-clustering
-        changed=true;
-        while (changed){
-            changed=false;
-            //reset values
-            layer0CentroidX=0;
-            layer0CentroidY=0;
-            layer0TotalX=0;
-            layer0TotalY=0;
-            layer0Count=0;
-
-            layer1CentroidX=0;
-            layer1CentroidY=0;
-            layer1TotalX=0;
-            layer1TotalY=0;
-            layer1Count=0;
-
-            layer2CentroidX=0;
-            layer2CentroidY=0;
-            layer2TotalX=0;
-            layer2TotalY=0;
-            layer2Count=0;
-
-            layer3CentroidX=0;
-            layer3CentroidY=0;
-            layer3TotalX=0;
-            layer3TotalY=0;
-            layer3Count=0;
-
-            //calculate centroids
-            for (Macroblock eachBlock : macroblocks) {
-                if (eachBlock.getMotionVector() != null) {
-                    if (eachBlock.getReferenceLayer() == 1) {
-                        layer1TotalX += eachBlock.getMotionVector().x;
-                        layer1TotalY += eachBlock.getMotionVector().y;
-                        layer1Count++;
-                    } else if (eachBlock.getReferenceLayer() == 2) {
-                        layer2TotalX += eachBlock.getMotionVector().x;
-                        layer2TotalY += eachBlock.getMotionVector().y;
-                        layer2Count++;
-                    } else if (eachBlock.getReferenceLayer() == 3) {
-                        layer3TotalX += eachBlock.getMotionVector().x;
-                        layer3TotalY += eachBlock.getMotionVector().y;
-                        layer3Count++;
-                    } else {
-                        layer0TotalX += eachBlock.getMotionVector().x;
-                        layer0TotalY += eachBlock.getMotionVector().y;
-                        layer0Count++;
-                    }
+            for (int i =0;i<NUM_LAYERS;i++){
+                if(layerCount[i] == 0){
+                    centroidsX[i] = -99999;
+                    centroidsY[i] = -99999;
+                }
+                else {
+                    centroidsX[i] = totalX[i] / layerCount[i];
+                    centroidsY[i] = totalY[i] / layerCount[i];
                 }
             }
-            layer0CentroidX=layer0TotalX/layer0Count;
-            layer0CentroidY=layer0TotalY/layer0Count;
-            layer1CentroidX=layer1TotalX/layer1Count;
-            layer1CentroidY=layer1TotalY/layer1Count;
-            layer2CentroidX=layer2TotalX/layer2Count;
-            layer2CentroidY=layer2TotalY/layer2Count;
-            layer3CentroidX=layer3TotalX/layer3Count;
-            layer3CentroidY=layer3TotalY/layer3Count;
 
             //reassigning
             for (Macroblock eachBlock : macroblocks) {
                 if (eachBlock.getMotionVector() != null) {
                     int originalLayer = eachBlock.getReferenceLayer();
                     //get recentCentroid value
-                    double recentCentroidX;
-                    double recentCentroidY;
-                    if (eachBlock.getReferenceLayer() == 1) {
-                        recentCentroidX = layer1CentroidX;
-                        recentCentroidY = layer1CentroidY;
-                    } else if (eachBlock.getReferenceLayer() == 2) {
-                        recentCentroidX = layer2CentroidX;
-                        recentCentroidY = layer2CentroidY;
-                    } else if (eachBlock.getReferenceLayer() == 3) {
-                        recentCentroidX = layer3CentroidX;
-                        recentCentroidY = layer3CentroidY;
-                    } else {
-                        recentCentroidX = layer0CentroidX;
-                        recentCentroidY = layer0CentroidY;
-                    }
-
-                    if (eachBlock.getMotionVector().getDistance(recentCentroidX, recentCentroidY) - eachBlock.getMotionVector().getDistance(layer1CentroidX, layer1CentroidY) >= 0) {
-                        eachBlock.setReferenceLayer(1);
-                        recentCentroidX = layer1CentroidX;
-                        recentCentroidY = layer1CentroidY;
-                    }
-                    if (eachBlock.getMotionVector().getDistance(recentCentroidX, recentCentroidY) - eachBlock.getMotionVector().getDistance(layer2CentroidX, layer2CentroidY) >= 0) {
-                        eachBlock.setReferenceLayer(2);
-                        recentCentroidX = layer2CentroidX;
-                        recentCentroidY = layer2CentroidY;
-                    }
-                    if (eachBlock.getMotionVector().getDistance(recentCentroidX, recentCentroidY) - eachBlock.getMotionVector().getDistance(layer3CentroidX, layer3CentroidY) >= 0) {
-                        eachBlock.setReferenceLayer(3);
-                        recentCentroidX = layer3CentroidX;
-                        recentCentroidY = layer3CentroidY;
-                    }
-                    if (eachBlock.getMotionVector().getDistance(recentCentroidX, recentCentroidY) - eachBlock.getMotionVector().getDistance(layer0CentroidX, layer0CentroidY) >= tolerantRate
-                            || eachBlock.getMotionVector().getDistance(layer0CentroidX, layer0CentroidY) < bgMinRadius) {
-                        eachBlock.setReferenceLayer(0);
+                    double minDist = eachBlock.getMotionVector().getDistance2(centroidsX[originalLayer], centroidsY[originalLayer]);
+                    double thisDist;
+                    for (int i =0;i<NUM_LAYERS;i++){
+                        thisDist = eachBlock.getMotionVector().getDistance2(centroidsX[i], centroidsY[i]);
+                        if(thisDist<minDist){
+                            minDist = thisDist;
+                            eachBlock.setReferenceLayer(i);
+                        }
                     }
 
                     if (originalLayer != eachBlock.getReferenceLayer()) {
                         changed = true;
                     }
                 }
-                else{
-                    eachBlock.setReferenceLayer(0);
+            }
+
+        }
+
+        //find out background layer cluster
+        for (int i =0;i<NUM_LAYERS;i++){
+            layerCount[i] = 0;
+        }
+
+        for (Macroblock eachBlock : macroblocks) {
+            if (eachBlock.getMotionVector() != null) {
+                layerCount[eachBlock.getReferenceLayer()]++;
+            }
+        }
+
+        int max = layerCount[0];
+        int maxlayer = 0;
+        for (int i =0;i<NUM_LAYERS;i++){
+            if(layerCount[i]>max){
+                max = layerCount[i];
+                maxlayer = i;
+            }
+        }
+
+        if(maxlayer != 0){
+            for (Macroblock eachBlock : macroblocks) {
+                if (eachBlock.getMotionVector() != null) {
+                    if (eachBlock.getReferenceLayer() == 0) {
+                        eachBlock.setReferenceLayer(maxlayer);
+                    } else if (eachBlock.getReferenceLayer() == maxlayer) {
+                        eachBlock.setReferenceLayer(0);
+                    }
                 }
             }
         }
 
-        //remove foreground layers that are probably background
-        layer0Count=0;
-        layer1Count=0;
-        layer2Count=0;
-        layer3Count=0;
-        for (Macroblock eachBlock : macroblocks) {
-            if (eachBlock.getMotionVector() != null) {
-                if(eachBlock.getReferenceLayer() == 1){
-                    layer1Count++;
-                }
-                else if(eachBlock.getReferenceLayer() == 2){
-                    layer2Count++;
-                }
-                else if(eachBlock.getReferenceLayer() == 3){
-                    layer3Count++;
-                }
+
+        //re-clustering
+        changed=true;
+        while (changed){
+            changed=false;
+            //reset values
+            for (int i =0;i<NUM_LAYERS;i++){
+                centroidsX[i] = 0;
+                centroidsY[i] = 0;
+                totalX[i] = 0;
+                totalY[i] = 0;
+                layerCount[i] = 0;
             }
-        }
-        if(layer1Count>960*540/1536){
+
+            //calculate centroids
             for (Macroblock eachBlock : macroblocks) {
-                if (eachBlock.getReferenceLayer()==1) {
-                    eachBlock.setReferenceLayer(0);
+                if (eachBlock.getMotionVector() != null) {
+                    thislayer = eachBlock.getReferenceLayer();
+                    totalX[thislayer] += eachBlock.getMotionVector().x;
+                    totalY[thislayer] += eachBlock.getMotionVector().y;
+                    layerCount[thislayer]++;
                 }
             }
-        }
-        if(layer2Count>960*540/1536){
+
+            for (int i =0;i<NUM_LAYERS;i++){
+                if(layerCount[i] == 0){
+                    centroidsX[i] = -99999;
+                    centroidsY[i] = -99999;
+                }
+                else {
+                    centroidsX[i] = totalX[i] / layerCount[i];
+                    centroidsY[i] = totalY[i] / layerCount[i];
+                }
+            }
+
+            //reassigning
             for (Macroblock eachBlock : macroblocks) {
-                if (eachBlock.getReferenceLayer()==2) {
-                    eachBlock.setReferenceLayer(0);
+                if (eachBlock.getMotionVector() != null) {
+                    int originalLayer = eachBlock.getReferenceLayer();
+                    //get recentCentroid value
+                    double minDist = eachBlock.getMotionVector().getDistance2(centroidsX[originalLayer], centroidsY[originalLayer]);
+                    double thisDist;
+                    for (int i =0;i<NUM_LAYERS;i++){
+                        thisDist = eachBlock.getMotionVector().getDistance2(centroidsX[i], centroidsY[i]);
+                        if(thisDist<minDist){
+                            minDist = thisDist;
+                            eachBlock.setReferenceLayer(i);
+                        }
+                    }
+
+                    if (originalLayer != eachBlock.getReferenceLayer()) {
+                        changed = true;
+                    }
                 }
             }
         }
-        if(layer3Count>960*540/1536){
-            for (Macroblock eachBlock : macroblocks) {
-                if (eachBlock.getReferenceLayer()==3) {
-                    eachBlock.setReferenceLayer(0);
+
+        //remove foreground layer that are probably background
+        double layer0CentroidX = centroidsX[0];
+        double layer0CentroidY = centroidsY[0];
+        for (int i = 1;i<NUM_LAYERS;i++){
+            if(Math.sqrt(Math.pow(layer0CentroidX-centroidsX[i],2)+Math.pow(layer0CentroidY-centroidsY[i],2))<bgMinRadius){
+                for (Macroblock eachBlock : macroblocks) {
+                    if (eachBlock.getReferenceLayer()==i) {
+                        eachBlock.setReferenceLayer(0);
+                    }
                 }
             }
         }
-//        if(Math.sqrt(Math.pow(layer0CentroidX-layer1CentroidX,2)+Math.pow(layer0CentroidY-layer1CentroidY,2))<1){
-//            for (Macroblock eachBlock : macroblocks) {
-//                if (eachBlock.getReferenceLayer()==1) {
-//                    eachBlock.setReferenceLayer(0);
-//                }
-//            }
-//        }
-//        if(Math.sqrt(Math.pow(layer0CentroidX-layer2CentroidX,2)+Math.pow(layer0CentroidY-layer2CentroidY,2))<1){
-//            for (Macroblock eachBlock : macroblocks) {
-//                if (eachBlock.getReferenceLayer()==2) {
-//                    eachBlock.setReferenceLayer(0);
-//                }
-//            }
-//        }
-//        if(Math.sqrt(Math.pow(layer0CentroidX-layer3CentroidX,2)+Math.pow(layer0CentroidY-layer3CentroidY,2))<1){
-//            for (Macroblock eachBlock : macroblocks) {
-//                if (eachBlock.getReferenceLayer()==3) {
-//                    eachBlock.setReferenceLayer(0);
-//                }
-//            }
-//        }
 
         //Decide layers
         for (Macroblock eachBlock : macroblocks) {
@@ -765,10 +594,10 @@ public class SegmentedFrame extends Frame {
                     }
                 }
             }
-            if (bgCount>3){
+            if (bgCount>BACKGROUND_COUNT_TOLERANCE){
                 eachBlock.setLayer(0);
             }
-            else if(bgCount<2){
+            else if(bgCount<FOREGROUND_COUNT_TOLERANCE){
                 eachBlock.setLayer(1);
             }
             else{

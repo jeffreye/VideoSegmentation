@@ -19,6 +19,11 @@ public class MotionVector {
     public double getDistance(double x,double y){
         return Math.sqrt(Math.pow(x-this.x,2)+Math.pow(y-this.y,2));
     }
+
+    public double getDistance2(double x,double y){
+        return Math.pow(x-this.x,2)+Math.pow(y-this.y,2);
+    }
+
     public double getDistance(MotionVector anotherVector){
         return Math.sqrt(Math.pow(x-anotherVector.x,2)+Math.pow(y-anotherVector.y,2));
     }
