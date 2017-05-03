@@ -1091,23 +1091,18 @@ public class SegmentedFrame extends Frame {
 
 
         if (referenceFrame != null) {
-            for (Macroblock eachBlock : macroblocks) {
+            for (Macroblock eachBlock : referenceFrame.macroblocks) {
                 if (eachBlock.getMotionVector() != null) {
-                    int previousLayer = referenceFrame.macroblocks[eachBlock.estimateBlockIndexAtLastFrame()].getLayer();
+                    int previousLayer = eachBlock.getLayer();
 
                     totalX[previousLayer] += eachBlock.getMotionVector().x;
                     totalY[previousLayer] += eachBlock.getMotionVector().y;
                     layerCount[previousLayer]++;
-                    eachBlock.setReferenceLayer(previousLayer);
                 }
             }
 
             for (int i = 0; i < NUM_LAYERS; i++) {
-
-                // Too much blocks in same layer
-                if (layerCount[i] > macroblocks.length * 0.8f) {
-                    // let centroid stay the same so that clustering could work regularly
-                } else if(layerCount[i] != 0) {
+                if(layerCount[i] != 0) {
                     centroidsX[i] = totalX[i] / layerCount[i];
                     centroidsY[i] = totalY[i] / layerCount[i];
                 }
@@ -1115,6 +1110,14 @@ public class SegmentedFrame extends Frame {
                 totalX[i] = 0;
                 totalY[i] = 0;
                 layerCount[i] = 0;
+            }
+
+
+            for (Macroblock eachBlock : macroblocks) {
+                if (eachBlock.getMotionVector() != null) {
+                    int previousLayer = referenceFrame.macroblocks[eachBlock.estimateBlockIndexAtLastFrame()].getLayer();
+                    eachBlock.setReferenceLayer(previousLayer);
+                }
             }
         }
 
