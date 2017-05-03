@@ -1285,59 +1285,60 @@ public class SegmentedFrame extends Frame {
             }
         }
 
-        // Decide layers by last frame
-        int[] blockStats = new int[NUM_LAYERS];
-        if (referenceFrame != null ){
-            // Check if last frame got a good results
-
-            for (Macroblock eachBlock : referenceFrame.macroblocks) {
-                blockStats[eachBlock.getLayer()]++;
-            }
-            boolean good = true;
-            for (int i = 0; i < NUM_LAYERS; i++) {
-                if (blockStats[i] >= macroblocks.length * 0.95f){
-                    // Too bad
-                    good = false;
-                    break;
-                }
-            }
-
-            if (good) {
-                for (int layer = 0; layer < NUM_LAYERS; layer++) {
-                    for (Macroblock eachBlock : macroblocks) {
-                        if (eachBlock.getMotionVector() != null && eachBlock.getReferenceLayer() == layer) {
-                            blockStats[referenceFrame.macroblocks[eachBlock.estimateBlockIndexAtLastFrame()].getLayer()]++;
-                        }
-                    }
-
-
-                    int popularLayer = 0;
-                    int popularLayerNums = blockStats[0];
-                    for (int i = 1; i < NUM_LAYERS; i++) {
-                        if (blockStats[i] > popularLayerNums) {
-                            popularLayerNums = blockStats[i];
-                            popularLayer = i;
-                        }
-                    }
-
-                    if (popularLayerNums >= layerCount[layer] * 0.8f && layer != popularLayer) {
-                        for (Macroblock eachBlock : macroblocks) {
-                            if (eachBlock.getMotionVector() != null && eachBlock.getReferenceLayer() == layer) {
-                                eachBlock.setReferenceLayer(popularLayer);
-                            }
-                        }
-
-                        layerCount[popularLayer] += layerCount[layer];
-                        layerCount[layer] = 0;
-                    }
-
-                    Arrays.fill(blockStats, 0);
-                }
-
-
-            }
-
-        }
+        //This can be added back later on when the problem(sometimes lose track on objects) is fixed
+//        // Decide layers by last frame
+//        int[] blockStats = new int[NUM_LAYERS];
+//        if (referenceFrame != null ){
+//            // Check if last frame got a good results
+//
+//            for (Macroblock eachBlock : referenceFrame.macroblocks) {
+//                blockStats[eachBlock.getLayer()]++;
+//            }
+//            boolean good = true;
+//            for (int i = 0; i < NUM_LAYERS; i++) {
+//                if (blockStats[i] >= macroblocks.length * 0.95f){
+//                    // Too bad
+//                    good = false;
+//                    break;
+//                }
+//            }
+//
+//            if (good) {
+//                for (int layer = 0; layer < NUM_LAYERS; layer++) {
+//                    for (Macroblock eachBlock : macroblocks) {
+//                        if (eachBlock.getMotionVector() != null && eachBlock.getReferenceLayer() == layer) {
+//                            blockStats[referenceFrame.macroblocks[eachBlock.estimateBlockIndexAtLastFrame()].getLayer()]++;
+//                        }
+//                    }
+//
+//
+//                    int popularLayer = 0;
+//                    int popularLayerNums = blockStats[0];
+//                    for (int i = 1; i < NUM_LAYERS; i++) {
+//                        if (blockStats[i] > popularLayerNums) {
+//                            popularLayerNums = blockStats[i];
+//                            popularLayer = i;
+//                        }
+//                    }
+//
+//                    if (popularLayerNums >= layerCount[layer] * 0.8f && layer != popularLayer) {
+//                        for (Macroblock eachBlock : macroblocks) {
+//                            if (eachBlock.getMotionVector() != null && eachBlock.getReferenceLayer() == layer) {
+//                                eachBlock.setReferenceLayer(popularLayer);
+//                            }
+//                        }
+//
+//                        layerCount[popularLayer] += layerCount[layer];
+//                        layerCount[layer] = 0;
+//                    }
+//
+//                    Arrays.fill(blockStats, 0);
+//                }
+//
+//
+//            }
+//
+//        }
 
         int[] horizontal = new int[NUM_LAYERS];
         int[] vertical = new int[NUM_LAYERS];
