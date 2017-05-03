@@ -14,6 +14,7 @@ import java.nio.channels.FileChannel;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Queue;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Created by Jeffreye on 4/1/2017.
@@ -236,7 +237,7 @@ public class VideoDecoder implements ActionListener, MouseMotionListener {
 //            System.out.println(String.format("FPS:%d",
 //                    Math.round(1000f / ((endTime - lastUpdate) / 1e6))));
             lastUpdate = endTime;
-            if (waitTime > 10)
+            if (waitTime > minUpdateInterval)
                 Thread.sleep(waitTime);
         } catch (InterruptedException e) {
             e.printStackTrace();
@@ -248,6 +249,8 @@ public class VideoDecoder implements ActionListener, MouseMotionListener {
 
     public void decode() throws IOException {
         SegmentedFrame lastFrame = new SegmentedFrame(height, width);
+        SegmentedFrame unquantizedFrame = new SegmentedFrame(height, width);
+
         while (true) {
             // Reset to first frame
             if (inputStream.size() == inputStream.position()) {
@@ -267,15 +270,26 @@ public class VideoDecoder implements ActionListener, MouseMotionListener {
 
             ImagePair rawImage = imageBuffers.remove();
 
+            long pos = inputStream.position();
             lastFrame.loadFrom(inputStream);
 
+            CompletableFuture<Void> originalFrame = null;
             if (gazeControl) {
-                lastFrame.reconstruct();
-                lastFrame.getRawImage(rawImage.original);
+                inputStream.position(pos);
+                unquantizedFrame.loadFrom(inputStream);
+
+                originalFrame = CompletableFuture.runAsync(()->{
+                    unquantizedFrame.reconstruct();
+                    unquantizedFrame.getRawImage(rawImage.original);
+                });
             }
 
             lastFrame.reconstruct(foregroundQuantizationValue, backgroundQuantizationValue);
             lastFrame.getRawImage(rawImage.quantized);
+
+            if (originalFrame != null){
+                originalFrame.join();
+            }
 
             nextFrames.add(rawImage);
 

@@ -184,13 +184,17 @@ public class Utils {
         }
     }
 
-    static final  float[][] y = new float[DCT_BLOCK_LENGTH][DCT_BLOCK_LENGTH];
-    static final  float[][] u = new float[DCT_BLOCK_LENGTH][DCT_BLOCK_LENGTH];
-    static final  float[][] v = new float[DCT_BLOCK_LENGTH][DCT_BLOCK_LENGTH];
+    static final  ThreadLocal<float[][]> threadedy = ThreadLocal.withInitial(()->new float[DCT_BLOCK_LENGTH][DCT_BLOCK_LENGTH]);
+    static final  ThreadLocal<float[][]> threadedu = ThreadLocal.withInitial(()->new float[DCT_BLOCK_LENGTH][DCT_BLOCK_LENGTH]);
+    static final  ThreadLocal<float[][]> threadedv = ThreadLocal.withInitial(()->new float[DCT_BLOCK_LENGTH][DCT_BLOCK_LENGTH]);
     public static void inverseDCT(float[][] dctValues, float[][] imageY, float[][] imageU, float[][] imageV) {
         // Calculate IDCT values
         int height = imageY.length;
         int width = imageY[0].length;
+
+        float[][] y = threadedy.get();
+        float[][] u = threadedu.get();
+        float[][] v = threadedv.get();
 
         int ind = 0;
         for (int i = 0; i < height; i += DCT_BLOCK_LENGTH) {
