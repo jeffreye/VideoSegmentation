@@ -10,7 +10,6 @@ import java.nio.channels.FileChannel;
 import java.util.ArrayList;
 import java.util.Arrays;
 
-import static cs576.Macroblock.BACKGROUND_LAYER;
 import static cs576.Macroblock.MACROBLOCK_LENGTH;
 import static cs576.Utils.*;
 
