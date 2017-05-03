@@ -8,7 +8,9 @@ import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
 import java.nio.channels.FileChannel;
 import java.util.ArrayList;
+import java.util.Arrays;
 
+import static cs576.Macroblock.BACKGROUND_LAYER;
 import static cs576.Macroblock.MACROBLOCK_LENGTH;
 import static cs576.Utils.*;
 
@@ -240,7 +242,7 @@ public class SegmentedFrame extends Frame {
             }
 
             if (min > 5000) {
-                // TODO: no matching block
+                // See this block as background if there is no matching block
 //                System.err.println("no matching block found");
             } else if (deltaX == 0 && deltaY == 0) {
                 b1.setMotionVector(new MotionVector(0, 0));
@@ -1040,6 +1042,10 @@ public class SegmentedFrame extends Frame {
 
 
         //v5.0
+
+        int macroblockHeight = 1 + (height - 1) / MACROBLOCK_LENGTH;
+        int macroblockWidth = 1 + (width - 1) / MACROBLOCK_LENGTH;
+
         int NUM_LAYERS = 8; //Number of layers to divide the vectors into
 
 //        double tolerantRate=0; //more foreground when larger, can be negative
@@ -1082,6 +1088,35 @@ public class SegmentedFrame extends Frame {
         centroidsY[7] = -10;
         centroidsX[0] = -10;
         centroidsY[0] = -10;
+
+
+        if (referenceFrame != null) {
+            for (Macroblock eachBlock : macroblocks) {
+                if (eachBlock.getMotionVector() != null) {
+                    int previousLayer = referenceFrame.macroblocks[eachBlock.estimateBlockIndexAtLastFrame()].getLayer();
+
+                    totalX[previousLayer] += eachBlock.getMotionVector().x;
+                    totalY[previousLayer] += eachBlock.getMotionVector().y;
+                    layerCount[previousLayer]++;
+                    eachBlock.setReferenceLayer(previousLayer);
+                }
+            }
+
+            for (int i = 0; i < NUM_LAYERS; i++) {
+
+                // Too much blocks in same layer
+                if (layerCount[i] > macroblocks.length * 0.8f) {
+                    // let centroid stay the same so that clustering could work regularly
+                } else if(layerCount[i] != 0) {
+                    centroidsX[i] = totalX[i] / layerCount[i];
+                    centroidsY[i] = totalY[i] / layerCount[i];
+                }
+
+                totalX[i] = 0;
+                totalY[i] = 0;
+                layerCount[i] = 0;
+            }
+        }
 
         int thislayer;
         //clustering
@@ -1240,12 +1275,84 @@ public class SegmentedFrame extends Frame {
             }
             layerCount[i] = 0;
         }
+
         for (Macroblock eachBlock : macroblocks) {
             if (eachBlock.getMotionVector() != null) {
                 thislayer = eachBlock.getReferenceLayer();
                 layerCount[thislayer]++;
             }
         }
+
+        // Decide layers by last frame
+//        if (referenceFrame != null && referenceFrame.referenceFrame != null){
+//            for (int layer = 0; layer < NUM_LAYERS; layer++) {
+//                int blockCount = 0;
+//                for (Macroblock eachBlock : macroblocks) {
+//                    if (eachBlock.getMotionVector() != null && eachBlock.getReferenceLayer() == layer) {
+//                        blockStats[referenceFrame.macroblocks[eachBlock.estimateBlockIndexAtLastFrame()].getLayer()]++;
+//                        blockCount++;
+//                    }
+//                }
+//
+//                int popularLayer = 0;
+//                int popularLayerNums = blockStats[0];
+//                for (int i = 1; i < NUM_LAYERS; i++) {
+//                    if (blockStats[i] > popularLayerNums) {
+//                        popularLayerNums = blockStats[i];
+//                        popularLayer = i;
+//                    }
+//                }
+//
+//                if (popularLayerNums >= blockCount * 0.8f) {
+//                    for (Macroblock eachBlock : macroblocks) {
+//                        if (eachBlock.getMotionVector() != null && eachBlock.getReferenceLayer() == layer) {
+//                            eachBlock.setReferenceLayer(popularLayer);
+//                        }
+//                    }
+//                }
+//
+//                Arrays.fill(blockStats, 0);
+//            }
+//
+//        }
+
+        int[] horizontal = new int[NUM_LAYERS];
+        int[] vertical = new int[NUM_LAYERS];
+        for (Macroblock eachBlock : macroblocks) {
+            if (eachBlock.getMotionVector() != null) {
+                int index = eachBlock.getBlockIndex();
+
+                // Up
+                if (index - macroblockWidth > 0 && macroblocks[index - macroblockWidth].getMotionVector() != null) {
+                    vertical[macroblocks[index - macroblockWidth].getReferenceLayer()]++;
+                }
+
+                // Down
+                if (index + macroblockWidth < macroblocks.length && macroblocks[index + macroblockWidth].getMotionVector() != null) {
+                    vertical[macroblocks[index + macroblockWidth].getReferenceLayer()]++;
+                }
+
+                // Left
+                if ((index % macroblockWidth) > 1 && macroblocks[index - 1].getMotionVector() != null) {
+                    horizontal[macroblocks[index - 1].getReferenceLayer()]++;
+                }
+                // Right
+                if (((index + 1) % macroblockWidth) != 0 && macroblocks[index + 1].getMotionVector() != null) {
+                    horizontal[macroblocks[index + 1].getReferenceLayer()]++;
+                }
+
+                for (int layer = 0; layer < NUM_LAYERS; layer++) {
+                    if ((horizontal[layer] >= 2 || vertical[layer] >= 2) && horizontal[eachBlock.getReferenceLayer()] == 0 && vertical[eachBlock.getReferenceLayer()] == 0) {
+                        eachBlock.setReferenceLayer(layer);
+                        break;
+                    }
+                }
+                Arrays.fill(horizontal, 0);
+                Arrays.fill(vertical, 0);
+            }
+        }
+
+
         for (int i = 1; i < NUM_LAYERS; i++) {
             if (layerCount[i] > macroblocks.length / (NUM_LAYERS * BACKGROUND_ENFORCED_FACTOR)) {
                 for (Macroblock eachBlock : macroblocks) {

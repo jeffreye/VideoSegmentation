@@ -292,6 +292,7 @@ public class VideoDecoder implements ActionListener, MouseMotionListener {
             timer.stop();
             videostatus = 0;
         } else {
+            lastUpdate = System.nanoTime();
             timer.start();
             videostatus = 1;
         }

@@ -1,7 +1,5 @@
 package cs576;
 
-import static java.lang.Math.pow;
-
 /**
  * Created by Jeffreye on 4/2/2017.
  */
@@ -11,7 +9,7 @@ public class Macroblock {
 
     public static final int BACKGROUND_LAYER = 0;
 
-//    public int vectorCount;
+    //    public int vectorCount;
     private int layer;
     private int referenceLayer;
     private int x;
@@ -29,8 +27,8 @@ public class Macroblock {
         this.motionVector = null;
     }
 
-    public int dist2(int x, int y){
-        return Math.max(Math.abs(x-this.x),Math.abs(y-this.y));
+    public int dist2(int x, int y) {
+        return Math.max(Math.abs(x - this.x), Math.abs(y - this.y));
     }
 
     public int getLayer() {
@@ -41,13 +39,14 @@ public class Macroblock {
         return referenceLayer;
     }
 
-    public boolean isBackgroundLayer(){
+    public boolean isBackgroundLayer() {
         return layer == BACKGROUND_LAYER;
     }
 
     public void setLayer(int layer) {
         this.layer = layer;
     }
+
     public void setReferenceLayer(int layer) {
         this.referenceLayer = layer;
     }
@@ -66,6 +65,20 @@ public class Macroblock {
 
     public MotionVector getMotionVector() {
         return motionVector;
+    }
+
+    public int estimateBlockIndexAtLastFrame() {
+        if (motionVector == null)
+            return index;
+
+        int prevX = x + motionVector.x;
+        int prevY = y + motionVector.y;
+
+        int row = prevY / MACROBLOCK_LENGTH + (motionVector.y + MACROBLOCK_LENGTH / 2) / MACROBLOCK_LENGTH;
+        int col = prevX / MACROBLOCK_LENGTH + (motionVector.x + MACROBLOCK_LENGTH / 2) / MACROBLOCK_LENGTH;
+
+        int macroblockWidth = 1 + (frame.width - 1) / MACROBLOCK_LENGTH;
+        return row * macroblockWidth + col;
     }
 
     public void setMotionVector(MotionVector motionVector) {
