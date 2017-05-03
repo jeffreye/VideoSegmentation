@@ -1043,9 +1043,9 @@ public class SegmentedFrame extends Frame {
         int NUM_LAYERS = 8; //Number of layers to divide the vectors into
 
 //        double tolerantRate=0; //more foreground when larger, can be negative
-        double bgMinRadius = 1.5; //more background when larger, should be positive, originally set to 3, I have had good results with 2
+//        double bgMinRadius = 1.5; //more background when larger, should be positive, originally set to 3, I have had good results with 2
         int PREDICT_MARK_RADIUS = 8; //better be around 8, marking without considering motion vectors when larger than 16
-        double BACKGROUND_ENFORCED_RADIUS = 3.5; //more background when larger, should be positive, less aggressive then bgMinRadius
+        double BACKGROUND_ENFORCED_RADIUS = 3; //more background when larger, should be positive, less aggressive then bgMinRadius
         double BACKGROUND_ENFORCED_FACTOR = 1; //more background when larger, should be positive, around 1
         int BACKGROUND_COUNT_TOLERANCE = 4; //Originally set to 3
         int FOREGROUND_COUNT_TOLERANCE = 2; //Originally set to 1, I have had good results with 2
@@ -1062,13 +1062,6 @@ public class SegmentedFrame extends Frame {
         int[] totalX = new int[NUM_LAYERS];
         int[] totalY = new int[NUM_LAYERS];
         int[] layerCount = new int[NUM_LAYERS];
-        for (int i = 0; i < NUM_LAYERS; i++) {
-            centroidsX[i] = 0;
-            centroidsY[i] = 0;
-            totalX[i] = 0;
-            totalY[i] = 0;
-            layerCount[i] = 0;
-        }
 
         //assigning initial centroids
 //        centroidsX[0] = 0;
@@ -1115,6 +1108,15 @@ public class SegmentedFrame extends Frame {
                         changed = true;
                     }
                 }
+            }
+
+            //reset values
+            for (int i = 0; i < NUM_LAYERS; i++) {
+                centroidsX[i] = 0;
+                centroidsY[i] = 0;
+                totalX[i] = 0;
+                totalY[i] = 0;
+                layerCount[i] = 0;
             }
 
             //calculate centroids
@@ -1254,22 +1256,24 @@ public class SegmentedFrame extends Frame {
             }
         }
 
-        double layer0CentroidX = centroidsX[0];
-        double layer0CentroidY = centroidsY[0];
-        for (int i = 1;i<NUM_LAYERS;i++){
-            if((Math.pow(layer0CentroidX-centroidsX[i],2)+Math.pow(layer0CentroidY-centroidsY[i],2))<bgMinRadius){
-                for (Macroblock eachBlock : macroblocks) {
-                    if (eachBlock.getReferenceLayer()==i) {
-                        eachBlock.setReferenceLayer(0);
-                    }
-                }
-            }
-        }
+//        double layer0CentroidX = centroidsX[0];
+//        double layer0CentroidY = centroidsY[0];
+//        for (int i = 1;i<NUM_LAYERS;i++){
+//            if((Math.pow(layer0CentroidX-centroidsX[i],2)+Math.pow(layer0CentroidY-centroidsY[i],2))<bgMinRadius){
+//                for (Macroblock eachBlock : macroblocks) {
+//                    if (eachBlock.getReferenceLayer()==i) {
+//                        eachBlock.setReferenceLayer(0);
+//                    }
+//                }
+//            }
+//        }
 
         //Decide layers by marking the location of the same block of previous frame
         for (Macroblock eachBlock : macroblocks) {
             int bgCount = 0;
             //track macroblock motion
+            int blockVectorX=0;
+            int blockVectorY=0;
             int blockMotionX=0;
             int blockMotionY=0;
             int blockIndex=eachBlock.getBlockIndex();
@@ -1277,123 +1281,48 @@ public class SegmentedFrame extends Frame {
             if (referenceFrame != null && eachBlock.getReferenceLayer() == 0) {
                 bgCount++;
                 if (this.getBlock(blockIndex).getMotionVector()!=null){
-                    if(getBlock(blockIndex).getMotionVector().x>PREDICT_MARK_RADIUS){
-                        blockMotionX=1;
-                    }
-                    else if (getBlock(blockIndex).getMotionVector().x<-PREDICT_MARK_RADIUS){
-                        blockMotionX=-1;
-                    }
-                    else{
-                        blockMotionX=0;
-                    }
-
-                    if(getBlock(blockIndex).getMotionVector().y>PREDICT_MARK_RADIUS){
-                        blockMotionY=1;
-                    }
-                    else if (getBlock(blockIndex).getMotionVector().y<-PREDICT_MARK_RADIUS){
-                        blockMotionY=-1;
-                    }
-                    else{
-                        blockMotionY=0;
-                    }
+                    blockVectorX+=getBlock(blockIndex).getMotionVector().x;
+                    blockVectorY+=getBlock(blockIndex).getMotionVector().y;
                 }
-                blockIndex+=(1 + (width - 1) / MACROBLOCK_LENGTH)*blockMotionY+blockMotionX;
+                blockMotionX=blockVectorX/MACROBLOCK_LENGTH+(blockVectorX%MACROBLOCK_LENGTH)/PREDICT_MARK_RADIUS;
+                blockMotionY=blockVectorY/MACROBLOCK_LENGTH+(blockVectorY%MACROBLOCK_LENGTH)/PREDICT_MARK_RADIUS;
+                blockIndex=eachBlock.getBlockIndex()+(1 + (width - 1) / MACROBLOCK_LENGTH)*blockMotionY+blockMotionX;
                 if (referenceFrame.referenceFrame != null && referenceFrame.getBlock(blockIndex).getReferenceLayer() == 0) {
                     bgCount++;
                     if (referenceFrame.getBlock(blockIndex).getMotionVector()!=null){
-                        if(referenceFrame.getBlock(blockIndex).getMotionVector().x>PREDICT_MARK_RADIUS){
-                            blockMotionX=1;
-                        }
-                        else if (referenceFrame.getBlock(blockIndex).getMotionVector().x<-PREDICT_MARK_RADIUS){
-                            blockMotionX=-1;
-                        }
-                        else{
-                            blockMotionX=0;
-                        }
-
-                        if(referenceFrame.getBlock(blockIndex).getMotionVector().y>PREDICT_MARK_RADIUS){
-                            blockMotionY=1;
-                        }
-                        else if (referenceFrame.getBlock(blockIndex).getMotionVector().y<-PREDICT_MARK_RADIUS){
-                            blockMotionY=-1;
-                        }
-                        else{
-                            blockMotionY=0;
-                        }
+                        blockVectorX+=referenceFrame.getBlock(blockIndex).getMotionVector().x;
+                        blockVectorY+=referenceFrame.getBlock(blockIndex).getMotionVector().y;
                     }
-                    blockIndex+=(1 + (width - 1) / MACROBLOCK_LENGTH)*blockMotionY+blockMotionX;
+                    blockMotionX=blockVectorX/MACROBLOCK_LENGTH+(blockVectorX%MACROBLOCK_LENGTH)/PREDICT_MARK_RADIUS;
+                    blockMotionY=blockVectorY/MACROBLOCK_LENGTH+(blockVectorY%MACROBLOCK_LENGTH)/PREDICT_MARK_RADIUS;
+                    blockIndex=eachBlock.getBlockIndex()+(1 + (width - 1) / MACROBLOCK_LENGTH)*blockMotionY+blockMotionX;
                     if (referenceFrame.referenceFrame.referenceFrame != null && referenceFrame.referenceFrame.getBlock(blockIndex).getReferenceLayer() == 0) {
                         bgCount++;
                         if (referenceFrame.referenceFrame.getBlock(blockIndex).getMotionVector()!=null){
-                            if(referenceFrame.referenceFrame.getBlock(blockIndex).getMotionVector().x>PREDICT_MARK_RADIUS){
-                                blockMotionX=1;
-                            }
-                            else if (referenceFrame.referenceFrame.getBlock(blockIndex).getMotionVector().x<-PREDICT_MARK_RADIUS){
-                                blockMotionX=-1;
-                            }
-                            else{
-                                blockMotionX=0;
-                            }
-
-                            if(referenceFrame.referenceFrame.getBlock(blockIndex).getMotionVector().y>PREDICT_MARK_RADIUS){
-                                blockMotionY=1;
-                            }
-                            else if (referenceFrame.referenceFrame.getBlock(blockIndex).getMotionVector().y<-PREDICT_MARK_RADIUS){
-                                blockMotionY=-1;
-                            }
-                            else{
-                                blockMotionY=0;
-                            }
+                            blockVectorX+=referenceFrame.referenceFrame.getBlock(blockIndex).getMotionVector().x;
+                            blockVectorY+=referenceFrame.referenceFrame.getBlock(blockIndex).getMotionVector().y;
                         }
-                        blockIndex+=(1 + (width - 1) / MACROBLOCK_LENGTH)*blockMotionY+blockMotionX;
+                        blockMotionX=blockVectorX/MACROBLOCK_LENGTH+(blockVectorX%MACROBLOCK_LENGTH)/PREDICT_MARK_RADIUS;
+                        blockMotionY=blockVectorY/MACROBLOCK_LENGTH+(blockVectorY%MACROBLOCK_LENGTH)/PREDICT_MARK_RADIUS;
+                        blockIndex=eachBlock.getBlockIndex()+(1 + (width - 1) / MACROBLOCK_LENGTH)*blockMotionY+blockMotionX;
                         if (referenceFrame.referenceFrame.referenceFrame.referenceFrame != null && referenceFrame.referenceFrame.referenceFrame.getBlock(blockIndex).getReferenceLayer() == 0) {
                             bgCount++;
                             if (referenceFrame.referenceFrame.referenceFrame.getBlock(blockIndex).getMotionVector()!=null){
-                                if(referenceFrame.referenceFrame.referenceFrame.getBlock(blockIndex).getMotionVector().x>PREDICT_MARK_RADIUS){
-                                    blockMotionX=1;
-                                }
-                                else if (referenceFrame.referenceFrame.referenceFrame.getBlock(blockIndex).getMotionVector().x<-PREDICT_MARK_RADIUS){
-                                    blockMotionX=-1;
-                                }
-                                else{
-                                    blockMotionX=0;
-                                }
-
-                                if(referenceFrame.referenceFrame.referenceFrame.getBlock(blockIndex).getMotionVector().y>PREDICT_MARK_RADIUS){
-                                    blockMotionY=1;
-                                }
-                                else if (referenceFrame.referenceFrame.referenceFrame.getBlock(blockIndex).getMotionVector().y<-PREDICT_MARK_RADIUS){
-                                    blockMotionY=-1;
-                                }
-                                else{
-                                    blockMotionY=0;
-                                }
+                                blockVectorX+=referenceFrame.referenceFrame.referenceFrame.getBlock(blockIndex).getMotionVector().x;
+                                blockVectorY+=referenceFrame.referenceFrame.referenceFrame.getBlock(blockIndex).getMotionVector().y;
                             }
-                            blockIndex+=(1 + (width - 1) / MACROBLOCK_LENGTH)*blockMotionY+blockMotionX;
+                            blockMotionX=blockVectorX/MACROBLOCK_LENGTH+(blockVectorX%MACROBLOCK_LENGTH)/PREDICT_MARK_RADIUS;
+                            blockMotionY=blockVectorY/MACROBLOCK_LENGTH+(blockVectorY%MACROBLOCK_LENGTH)/PREDICT_MARK_RADIUS;
+                            blockIndex=eachBlock.getBlockIndex()+(1 + (width - 1) / MACROBLOCK_LENGTH)*blockMotionY+blockMotionX;
                             if (referenceFrame.referenceFrame.referenceFrame.referenceFrame.referenceFrame != null && referenceFrame.referenceFrame.referenceFrame.referenceFrame.getBlock(blockIndex).getReferenceLayer() == 0) {
                                 bgCount++;
                                 if (referenceFrame.referenceFrame.referenceFrame.referenceFrame.getBlock(blockIndex).getMotionVector()!=null){
-                                    if(referenceFrame.referenceFrame.referenceFrame.referenceFrame.getBlock(blockIndex).getMotionVector().x>PREDICT_MARK_RADIUS){
-                                        blockMotionX=1;
-                                    }
-                                    else if (referenceFrame.referenceFrame.referenceFrame.referenceFrame.getBlock(blockIndex).getMotionVector().x<-PREDICT_MARK_RADIUS){
-                                        blockMotionX=-1;
-                                    }
-                                    else{
-                                        blockMotionX=0;
-                                    }
-
-                                    if(referenceFrame.referenceFrame.referenceFrame.referenceFrame.getBlock(blockIndex).getMotionVector().y>PREDICT_MARK_RADIUS){
-                                        blockMotionY=1;
-                                    }
-                                    else if (referenceFrame.referenceFrame.referenceFrame.referenceFrame.getBlock(blockIndex).getMotionVector().y<-PREDICT_MARK_RADIUS){
-                                        blockMotionY=-1;
-                                    }
-                                    else{
-                                        blockMotionY=0;
-                                    }
+                                    blockVectorX+=referenceFrame.referenceFrame.referenceFrame.referenceFrame.getBlock(blockIndex).getMotionVector().x;
+                                    blockVectorY+=referenceFrame.referenceFrame.referenceFrame.referenceFrame.getBlock(blockIndex).getMotionVector().y;
                                 }
-                                blockIndex+=(1 + (width - 1) / MACROBLOCK_LENGTH)*blockMotionY+blockMotionX;
+                                blockMotionX=blockVectorX/MACROBLOCK_LENGTH+(blockVectorX%MACROBLOCK_LENGTH)/PREDICT_MARK_RADIUS;
+                                blockMotionY=blockVectorY/MACROBLOCK_LENGTH+(blockVectorY%MACROBLOCK_LENGTH)/PREDICT_MARK_RADIUS;
+                                blockIndex=eachBlock.getBlockIndex()+(1 + (width - 1) / MACROBLOCK_LENGTH)*blockMotionY+blockMotionX;
                                 if (referenceFrame.referenceFrame.referenceFrame.referenceFrame.referenceFrame.getBlock(blockIndex).getReferenceLayer() == 0) {
                                     bgCount++;
                                 }
