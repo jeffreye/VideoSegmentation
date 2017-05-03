@@ -1,5 +1,7 @@
-# USC-CS576-Final
-Video compression encoder/decoder and video player with gaze control
+# Introduction
+This was the final project in CS576 at USC. For more details, see Video-SegmentationCompression.docx
+
+Test cases are right [here](https://drive.google.com/file/d/0B6yPKfIXOM7PcHE2NHkyZWdJa1E/view?usp=sharing). 
 
 # Usage
 1) myencoder.exe input_video.rgb
