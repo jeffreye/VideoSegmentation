@@ -1050,7 +1050,7 @@ public class SegmentedFrame extends Frame {
 
 //        double tolerantRate=0; //more foreground when larger, can be negative
 //        double bgMinRadius = 1.5; //more background when larger, should be positive, originally set to 3, I have had good results with 2
-        int PREDICT_MARK_RADIUS = 8; //better be around 8, marking without considering motion vectors when larger than 16
+        int PREDICT_MARK_RADIUS = 10; //better be around 8, marking without considering motion vectors when larger than 16
         double BACKGROUND_ENFORCED_RADIUS = 3; //more background when larger, should be positive, less aggressive then bgMinRadius
         double BACKGROUND_ENFORCED_FACTOR = 1; //more background when larger, should be positive, around 1
         int BACKGROUND_COUNT_TOLERANCE = 4; //Originally set to 3
