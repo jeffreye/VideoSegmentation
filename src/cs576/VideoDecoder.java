@@ -233,8 +233,8 @@ public class VideoDecoder implements ActionListener, MouseMotionListener {
             final double deltaTime = (endTime - lastUpdate) / 1e6;
             final long waitTime = Math.round(minUpdateInterval - deltaTime);
 //            lbText1.setText(String.format("FPS:%d",
-            System.out.println(String.format("FPS:%d",
-                    Math.round(1000f / ((endTime - lastUpdate) / 1e6))));
+//            System.out.println(String.format("FPS:%d",
+//                    Math.round(1000f / ((endTime - lastUpdate) / 1e6))));
             lastUpdate = endTime;
             if (waitTime > 10)
                 Thread.sleep(waitTime);
