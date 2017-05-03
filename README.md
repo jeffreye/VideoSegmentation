@@ -1,5 +1,5 @@
 # Introduction
-This was the final project in CS576 at USC. For more details, see Video-SegmentationCompression.docx
+This was the final project in CS576 at USC. For more details, see [Video-SegmentationCompression.docx](https://github.com/jeffreye/VideoSegmentation/raw/master/Video-SegmentationCompression.docx)
 
 Test cases are right [here](https://drive.google.com/file/d/0B6yPKfIXOM7PcHE2NHkyZWdJa1E/view?usp=sharing). 
 
