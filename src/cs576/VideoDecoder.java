@@ -63,7 +63,6 @@ public class VideoDecoder implements ActionListener, MouseMotionListener {
     private int pointerX, pointerY;
     private int videostatus;
     private int currentFrame;
-    private boolean restartFlag;
 
     private FileChannel inputStream;
     private ArrayList<Long> framePositions;
@@ -79,6 +78,7 @@ public class VideoDecoder implements ActionListener, MouseMotionListener {
     private Queue<ImagePair> nextFrames;
     private Queue<ImagePair> imageBuffers;
     private Timer timer;
+    private long minUpdateInterval;
 
     public VideoDecoder(String inputFile, int foregroundQuantizationValue, int backgroundQuantizationValue, boolean gazeControl, int fps) throws IOException {
         this.inputStream = new FileInputStream(inputFile).getChannel();
@@ -112,7 +112,7 @@ public class VideoDecoder implements ActionListener, MouseMotionListener {
         showWindow(fps, frameNumbers);
 
         // Allocate buffers
-        for (int i = 0; i < 8; i++) {
+        for (int i = 0; i < 32; i++) {
             imageBuffers.add(new ImagePair(width, height));
         }
     }
@@ -195,11 +195,14 @@ public class VideoDecoder implements ActionListener, MouseMotionListener {
 //        frame.setExtendedState(JFrame.MAXIMIZED_BOTH);
 
 
-        timer = new Timer(1000 / fps, e -> refreshImage());
+        lastUpdate = System.nanoTime();
+        minUpdateInterval = (long) Math.floor(1000.0 / fps);
+        timer = new Timer(1000 / (fps*2), e -> refreshImage());
         timer.setInitialDelay(0);
         timer.start();
     }
 
+    long lastUpdate;
 
     private void refreshImage() {
         // Video is buffering
@@ -216,11 +219,30 @@ public class VideoDecoder implements ActionListener, MouseMotionListener {
         if (nextFrames.size() == 0)
             return;
 
+
+
         ImagePair frame = nextFrames.remove();
         int[] buffer = gazeControl ? frame.blend(pointerX, pointerY) : frame.quantized;
         imageBuffers.add(frame);
 
         image.getRaster().setDataElements(0, 0, width, height, buffer);
+
+        try {
+            // End timer
+            final long endTime = System.nanoTime();
+            final double deltaTime = (endTime - lastUpdate) / 1e6;
+            final long waitTime = Math.round(minUpdateInterval - deltaTime);
+//            lbText1.setText(String.format("FPS:%d",
+            System.out.println(String.format("FPS:%d",
+                    Math.round(1000f / ((endTime - lastUpdate) / 1e6))));
+            lastUpdate = endTime;
+            if (waitTime > 10)
+                Thread.sleep(waitTime);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+
+
         lbIm1.repaint();
     }
 
@@ -228,10 +250,9 @@ public class VideoDecoder implements ActionListener, MouseMotionListener {
         SegmentedFrame lastFrame = new SegmentedFrame(height, width);
         while (true) {
             // Reset to first frame
-            if (inputStream.size() == inputStream.position() || restartFlag) {
+            if (inputStream.size() == inputStream.position()) {
                 inputStream.position(framePositions.get(0));
                 currentFrame = 0;
-                restartFlag = false;
             }
 
             // Stop buffering
@@ -243,7 +264,6 @@ public class VideoDecoder implements ActionListener, MouseMotionListener {
                     e.printStackTrace();
                 }
 
-//            final long startTime = System.nanoTime();
 
             ImagePair rawImage = imageBuffers.remove();
 
@@ -259,11 +279,6 @@ public class VideoDecoder implements ActionListener, MouseMotionListener {
 
             nextFrames.add(rawImage);
 
-            // End timer
-//            final long endTime = System.nanoTime();
-//
-//            System.out.printf("\rTime elapsed: %f ms\n",
-//                    (float) (endTime - startTime) / 1e6);
         }
     }
 
@@ -288,7 +303,9 @@ public class VideoDecoder implements ActionListener, MouseMotionListener {
         if (src == playpause) {
             playOrPauseVideo();
         } else if (src == restart) {
-            restartFlag = true;
+            seekBar.setValueIsAdjusting(true);
+            seekBar.setValue(0);
+            seekBar.setValueIsAdjusting(false);
         }
     }
 
