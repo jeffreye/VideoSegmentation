@@ -74,8 +74,8 @@ public class Macroblock {
         int prevX = x + motionVector.x;
         int prevY = y + motionVector.y;
 
-        int row = prevY / MACROBLOCK_LENGTH + (motionVector.y + MACROBLOCK_LENGTH / 2) / MACROBLOCK_LENGTH;
-        int col = prevX / MACROBLOCK_LENGTH + (motionVector.x + MACROBLOCK_LENGTH / 2) / MACROBLOCK_LENGTH;
+        int row = (prevY + MACROBLOCK_LENGTH / 2) / MACROBLOCK_LENGTH;
+        int col = (prevX + MACROBLOCK_LENGTH / 2) / MACROBLOCK_LENGTH;
 
         int macroblockWidth = 1 + (frame.width - 1) / MACROBLOCK_LENGTH;
         return row * macroblockWidth + col;
