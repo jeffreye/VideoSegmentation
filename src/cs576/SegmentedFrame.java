@@ -1043,10 +1043,10 @@ public class SegmentedFrame extends Frame {
         int NUM_LAYERS = 8; //Number of layers to divide the vectors into
 
 //        double tolerantRate=0; //more foreground when larger, can be negative
-        double bgMinRadius = 2; //more background when larger, should be positive, originally set to 3, I have had good results with 2
+        double bgMinRadius = 1.5; //more background when larger, should be positive, originally set to 3, I have had good results with 2
         int PREDICT_MARK_RADIUS = 8; //better be around 8, marking without considering motion vectors when larger than 16
-        double BACKGROUND_ENFORCED_RADIUS = 3; //more background when larger, should be positive, less aggressive then bgMinRadius
-        double BACKGROUND_ENFORCED_FACTOR = 0.8; //more background when larger, should be positive, around 1
+        double BACKGROUND_ENFORCED_RADIUS = 3.5; //more background when larger, should be positive, less aggressive then bgMinRadius
+        double BACKGROUND_ENFORCED_FACTOR = 1; //more background when larger, should be positive, around 1
         int BACKGROUND_COUNT_TOLERANCE = 4; //Originally set to 3
         int FOREGROUND_COUNT_TOLERANCE = 2; //Originally set to 1, I have had good results with 2
 
@@ -1245,7 +1245,7 @@ public class SegmentedFrame extends Frame {
             }
         }
         for (int i = 1; i < NUM_LAYERS; i++) {
-            if (layerCount[i] > this.width * height / macroblocks.length / (NUM_LAYERS * BACKGROUND_ENFORCED_FACTOR)) {
+            if (layerCount[i] > macroblocks.length / (NUM_LAYERS * BACKGROUND_ENFORCED_FACTOR)) {
                 for (Macroblock eachBlock : macroblocks) {
                     if (eachBlock.getReferenceLayer() == i) {
                         eachBlock.setReferenceLayer(0);
@@ -1257,7 +1257,7 @@ public class SegmentedFrame extends Frame {
         double layer0CentroidX = centroidsX[0];
         double layer0CentroidY = centroidsY[0];
         for (int i = 1;i<NUM_LAYERS;i++){
-            if(Math.pow(layer0CentroidX-centroidsX[i],2)+Math.pow(layer0CentroidY-centroidsY[i],2)<bgMinRadius){
+            if((Math.pow(layer0CentroidX-centroidsX[i],2)+Math.pow(layer0CentroidY-centroidsY[i],2))<bgMinRadius){
                 for (Macroblock eachBlock : macroblocks) {
                     if (eachBlock.getReferenceLayer()==i) {
                         eachBlock.setReferenceLayer(0);
