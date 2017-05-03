@@ -10,7 +10,6 @@ import java.nio.channels.FileChannel;
 import java.util.ArrayList;
 import java.util.Arrays;
 
-import static cs576.Macroblock.BACKGROUND_LAYER;
 import static cs576.Macroblock.MACROBLOCK_LENGTH;
 import static cs576.Utils.*;
 
@@ -1050,7 +1049,7 @@ public class SegmentedFrame extends Frame {
 
 //        double tolerantRate=0; //more foreground when larger, can be negative
 //        double bgMinRadius = 1.5; //more background when larger, should be positive, originally set to 3, I have had good results with 2
-        int PREDICT_MARK_RADIUS = 8; //better be around 8, marking without considering motion vectors when larger than 16
+        int PREDICT_MARK_RADIUS = 10; //better be around 8, marking without considering motion vectors when larger than 16
         double BACKGROUND_ENFORCED_RADIUS = 3; //more background when larger, should be positive, less aggressive then bgMinRadius
         double BACKGROUND_ENFORCED_FACTOR = 1; //more background when larger, should be positive, around 1
         int BACKGROUND_COUNT_TOLERANCE = 4; //Originally set to 3
@@ -1090,33 +1089,33 @@ public class SegmentedFrame extends Frame {
         centroidsY[0] = -10;
 
 
-        if (referenceFrame != null) {
-            for (Macroblock eachBlock : macroblocks) {
-                if (eachBlock.getMotionVector() != null) {
-                    int previousLayer = referenceFrame.macroblocks[eachBlock.estimateBlockIndexAtLastFrame()].getLayer();
-
-                    totalX[previousLayer] += eachBlock.getMotionVector().x;
-                    totalY[previousLayer] += eachBlock.getMotionVector().y;
-                    layerCount[previousLayer]++;
-                    eachBlock.setReferenceLayer(previousLayer);
-                }
-            }
-
-            for (int i = 0; i < NUM_LAYERS; i++) {
-
-                // Too much blocks in same layer
-                if (layerCount[i] > macroblocks.length * 0.8f) {
-                    // let centroid stay the same so that clustering could work regularly
-                } else if(layerCount[i] != 0) {
-                    centroidsX[i] = totalX[i] / layerCount[i];
-                    centroidsY[i] = totalY[i] / layerCount[i];
-                }
-
-                totalX[i] = 0;
-                totalY[i] = 0;
-                layerCount[i] = 0;
-            }
-        }
+//        if (referenceFrame != null) {
+//            for (Macroblock eachBlock : macroblocks) {
+//                if (eachBlock.getMotionVector() != null) {
+//                    int previousLayer = referenceFrame.macroblocks[eachBlock.estimateBlockIndexAtLastFrame()].getLayer();
+//
+//                    totalX[previousLayer] += eachBlock.getMotionVector().x;
+//                    totalY[previousLayer] += eachBlock.getMotionVector().y;
+//                    layerCount[previousLayer]++;
+//                    eachBlock.setReferenceLayer(previousLayer);
+//                }
+//            }
+//
+//            for (int i = 0; i < NUM_LAYERS; i++) {
+//
+//                // Too much blocks in same layer
+//                if (layerCount[i] > macroblocks.length * 0.8f) {
+//                    // let centroid stay the same so that clustering could work regularly
+//                } else if(layerCount[i] != 0) {
+//                    centroidsX[i] = totalX[i] / layerCount[i];
+//                    centroidsY[i] = totalY[i] / layerCount[i];
+//                }
+//
+//                totalX[i] = 0;
+//                totalY[i] = 0;
+//                layerCount[i] = 0;
+//            }
+//        }
 
         int thislayer;
         //clustering
