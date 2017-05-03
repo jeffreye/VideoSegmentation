@@ -1245,7 +1245,7 @@ public class SegmentedFrame extends Frame {
             }
         }
         for (int i = 1; i < NUM_LAYERS; i++) {
-            if (layerCount[i] > 960 * 540 / 256 / (NUM_LAYERS * BACKGROUND_ENFORCED_FACTOR)) {
+            if (layerCount[i] > this.width * height / MACROBLOCK_LENGTH / (NUM_LAYERS * BACKGROUND_ENFORCED_FACTOR)) {
                 for (Macroblock eachBlock : macroblocks) {
                     if (eachBlock.getReferenceLayer() == i) {
                         eachBlock.setReferenceLayer(0);
@@ -1254,17 +1254,17 @@ public class SegmentedFrame extends Frame {
             }
         }
 
-//        double layer0CentroidX = centroidsX[0];
-//        double layer0CentroidY = centroidsY[0];
-//        for (int i = 1;i<NUM_LAYERS;i++){
-//            if(Math.sqrt(Math.pow(layer0CentroidX-centroidsX[i],2)+Math.pow(layer0CentroidY-centroidsY[i],2))<bgMinRadius){
-//                for (Macroblock eachBlock : macroblocks) {
-//                    if (eachBlock.getReferenceLayer()==i) {
-//                        eachBlock.setReferenceLayer(0);
-//                    }
-//                }
-//            }
-//        }
+        double layer0CentroidX = centroidsX[0];
+        double layer0CentroidY = centroidsY[0];
+        for (int i = 1;i<NUM_LAYERS;i++){
+            if(Math.pow(layer0CentroidX-centroidsX[i],2)+Math.pow(layer0CentroidY-centroidsY[i],2)<bgMinRadius){
+                for (Macroblock eachBlock : macroblocks) {
+                    if (eachBlock.getReferenceLayer()==i) {
+                        eachBlock.setReferenceLayer(0);
+                    }
+                }
+            }
+        }
 
         //Decide layers by marking the location of the same block of previous frame
         for (Macroblock eachBlock : macroblocks) {
@@ -1297,7 +1297,7 @@ public class SegmentedFrame extends Frame {
                         blockMotionY=0;
                     }
                 }
-                blockIndex+=60*blockMotionY+blockMotionX;
+                blockIndex+=(1 + (width - 1) / MACROBLOCK_LENGTH)*blockMotionY+blockMotionX;
                 if (referenceFrame.referenceFrame != null && referenceFrame.getBlock(blockIndex).getReferenceLayer() == 0) {
                     bgCount++;
                     if (referenceFrame.getBlock(blockIndex).getMotionVector()!=null){
@@ -1321,7 +1321,7 @@ public class SegmentedFrame extends Frame {
                             blockMotionY=0;
                         }
                     }
-                    blockIndex+=60*blockMotionY+blockMotionX;
+                    blockIndex+=(1 + (width - 1) / MACROBLOCK_LENGTH)*blockMotionY+blockMotionX;
                     if (referenceFrame.referenceFrame.referenceFrame != null && referenceFrame.referenceFrame.getBlock(blockIndex).getReferenceLayer() == 0) {
                         bgCount++;
                         if (referenceFrame.referenceFrame.getBlock(blockIndex).getMotionVector()!=null){
@@ -1345,7 +1345,7 @@ public class SegmentedFrame extends Frame {
                                 blockMotionY=0;
                             }
                         }
-                        blockIndex+=60*blockMotionY+blockMotionX;
+                        blockIndex+=(1 + (width - 1) / MACROBLOCK_LENGTH)*blockMotionY+blockMotionX;
                         if (referenceFrame.referenceFrame.referenceFrame.referenceFrame != null && referenceFrame.referenceFrame.referenceFrame.getBlock(blockIndex).getReferenceLayer() == 0) {
                             bgCount++;
                             if (referenceFrame.referenceFrame.referenceFrame.getBlock(blockIndex).getMotionVector()!=null){
@@ -1369,7 +1369,7 @@ public class SegmentedFrame extends Frame {
                                     blockMotionY=0;
                                 }
                             }
-                            blockIndex+=60*blockMotionY+blockMotionX;
+                            blockIndex+=(1 + (width - 1) / MACROBLOCK_LENGTH)*blockMotionY+blockMotionX;
                             if (referenceFrame.referenceFrame.referenceFrame.referenceFrame.referenceFrame != null && referenceFrame.referenceFrame.referenceFrame.referenceFrame.getBlock(blockIndex).getReferenceLayer() == 0) {
                                 bgCount++;
                                 if (referenceFrame.referenceFrame.referenceFrame.referenceFrame.getBlock(blockIndex).getMotionVector()!=null){
@@ -1393,7 +1393,7 @@ public class SegmentedFrame extends Frame {
                                         blockMotionY=0;
                                     }
                                 }
-                                blockIndex+=60*blockMotionY+blockMotionX;
+                                blockIndex+=(1 + (width - 1) / MACROBLOCK_LENGTH)*blockMotionY+blockMotionX;
                                 if (referenceFrame.referenceFrame.referenceFrame.referenceFrame.referenceFrame.getBlock(blockIndex).getReferenceLayer() == 0) {
                                     bgCount++;
                                 }
